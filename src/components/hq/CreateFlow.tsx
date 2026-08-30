@@ -1,0 +1,256 @@
+import { useState } from 'react'
+import { supabase } from '../../lib/supabase'
+import type { Project, Job } from '../../lib/hqTypes'
+import {
+  PROJECT_TYPES,
+  PROJECT_TYPE_LABELS,
+  STAGES,
+  logActivity,
+} from '../../lib/hq'
+import { navigate } from '../../lib/router'
+
+const TONES = [
+  'Slow-building dread',
+  'Visceral / intense',
+  'Quiet and psychological',
+  'Surreal and dreamlike',
+  'Bleak and hopeless',
+]
+
+const PLATFORMS = ['YouTube', 'Instagram', 'TikTok', 'X', 'Internal', 'Other']
+
+export default function CreateFlow() {
+  const [idea, setIdea] = useState('')
+  const [type, setType] = useState('short-film')
+  const [tone, setTone] = useState('')
+  const [platform, setPlatform] = useState('')
+  const [duration, setDuration] = useState('')
+  const [title, setTitle] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<{ project: Project; job: Job } | null>(null)
+
+  async function onCreate(e: React.FormEvent) {
+    e.preventDefault()
+    if (creating || !idea.trim()) return
+    setCreating(true)
+    setError('')
+
+    const projectTitle = title.trim() || idea.trim().slice(0, 60)
+
+    try {
+      const { data: projData, error: projErr } = await supabase
+        .from('projects')
+        .insert({
+          title: projectTitle,
+          goal: idea.trim(),
+          status: 'active',
+          type,
+          tone: tone || null,
+          target_platform: platform || null,
+          duration: duration || null,
+        })
+        .select()
+        .single()
+      if (projErr) throw projErr
+
+      const { data: jobData, error: jobErr } = await supabase
+        .from('jobs')
+        .insert({
+          project_id: projData.id,
+          title: projectTitle,
+          kind: 'production',
+          stage: 'idea',
+          brief: idea.trim(),
+        })
+        .select()
+        .single()
+      if (jobErr) throw jobErr
+
+      await Promise.all([
+        logActivity(projData.id, jobData.id, 'Herman', 'created project and production job', 'create', projectTitle),
+        logActivity(projData.id, jobData.id, 'Allie', 'received the brief — planning next', 'info'),
+        logActivity(projData.id, jobData.id, 'Herman', `routed job to stage: ${STAGES[0]}`, 'system'),
+      ])
+
+      setResult({ project: projData, job: jobData })
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to create the job.',
+      )
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  if (result) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-8">
+        <div className="text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-toxic-600/60 bg-toxic-700/10">
+            <span className="font-display text-3xl text-toxic-400">✦</span>
+          </div>
+          <h1 className="mt-6 font-display text-3xl font-semibold text-ink-100">
+            Job created.
+          </h1>
+          <p className="mt-3 text-ink-300">
+            Herman has the brief. The Roundtable can discuss it, and the job
+            pipeline is live.
+          </p>
+        </div>
+
+        <div className="card p-6 space-y-4">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
+              Project
+            </p>
+            <p className="mt-1 text-lg text-ink-100">{result.project.title}</p>
+          </div>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
+              Job
+            </p>
+            <p className="mt-1 text-lg text-ink-100">{result.job.title}</p>
+          </div>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
+              Stage
+            </p>
+            <p className="mt-1 text-lg text-toxic-300">Idea → Plan</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <button
+            onClick={() => navigate({ name: 'hq-project', id: result.project.id })}
+            className="btn-primary"
+          >
+            Open Project
+          </button>
+          <button
+            onClick={() => navigate({ name: 'hq-roundtable', projectId: result.project.id })}
+            className="btn-ghost"
+          >
+            Take to Roundtable
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-8">
+      <div>
+        <p className="section-eyebrow">
+          <span className="h-px w-8 bg-blood-700" /> Create
+        </p>
+        <h1 className="section-title">
+          Bring an
+          <span className="italic text-blood-500"> idea.</span>
+        </h1>
+        <p className="mt-4 text-ink-300">
+          Headquarters will create a project and a production job from it.
+          Herman takes it from there.
+        </p>
+      </div>
+
+      <form onSubmit={onCreate} className="card space-y-6 p-7">
+        <div>
+          <label className="field-label">
+            Your idea <span className="text-blood-500">*</span>
+          </label>
+          <textarea
+            required
+            value={idea}
+            onChange={(e) => setIdea(e.target.value)}
+            className="field-textarea"
+            placeholder="Make me a creepy 20-second short about something moving behind a bedroom door."
+            rows={4}
+          />
+        </div>
+
+        <div>
+          <label className="field-label">Project title (optional)</label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="field-input"
+            placeholder="Auto-generated from your idea if left blank"
+          />
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <label className="field-label">Type</label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className="field-select"
+            >
+              {PROJECT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {PROJECT_TYPE_LABELS[t] ?? t}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="field-label">Tone</label>
+            <select
+              value={tone}
+              onChange={(e) => setTone(e.target.value)}
+              className="field-select"
+            >
+              <option value="">Choose…</option>
+              {TONES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="field-label">Target platform</label>
+            <select
+              value={platform}
+              onChange={(e) => setPlatform(e.target.value)}
+              className="field-select"
+            >
+              <option value="">Choose…</option>
+              {PLATFORMS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="field-label">Duration</label>
+            <input
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              className="field-input"
+              placeholder="e.g. 20 seconds, 3 minutes"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div className="rounded-lg border border-blood-700/60 bg-blood-900/30 px-4 py-3 text-sm text-blood-300">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={creating || !idea.trim()}
+            className="btn-primary"
+          >
+            {creating ? 'Creating…' : 'Create Job'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}

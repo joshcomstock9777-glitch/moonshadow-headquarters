@@ -1,0 +1,276 @@
+import { useEffect, useState, useCallback } from 'react'
+import { supabase } from '../../lib/supabase'
+import type { Job, Project } from '../../lib/hqTypes'
+import { STAGE_LABELS, stageColor, timeAgo } from '../../lib/hq'
+import { navigate } from '../../lib/router'
+
+// Content Factory: production jobs organized into configurable lanes/channels.
+// Lanes are configurable, not hard-coded — stored in localStorage.
+const DEFAULT_LANES = ['Short Film', 'Story', 'Channel Piece', 'Social Clip']
+
+export default function ContentFactory() {
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [lanes, setLanes] = useState<string[]>(DEFAULT_LANES)
+  const [loading, setLoading] = useState(true)
+  const [showLaneConfig, setShowLaneConfig] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('hq-lanes')
+    if (saved) {
+      try {
+        setLanes(JSON.parse(saved))
+      } catch {
+        // keep defaults
+      }
+    }
+  }, [])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const [j, p] = await Promise.all([
+      supabase.from('jobs').select('*').order('updated_at', { ascending: false }),
+      supabase.from('projects').select('*').order('updated_at', { ascending: false }),
+    ])
+    setJobs(j.data ?? [])
+    setProjects(p.data ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  function saveLanes(newLanes: string[]) {
+    setLanes(newLanes)
+    localStorage.setItem('hq-lanes', JSON.stringify(newLanes))
+  }
+
+  const projectMap = new Map(projects.map((p) => [p.id, p]))
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="section-eyebrow">
+            <span className="h-px w-8 bg-blood-700" /> Content Factory
+          </p>
+          <h1 className="section-title">
+            Production jobs, by
+            <span className="italic text-blood-500"> lane.</span>
+          </h1>
+          <p className="mt-4 max-w-2xl text-ink-300">
+            Repeatable short-form content organized into configurable lanes.
+            See exactly where each piece is in production.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowLaneConfig(true)}
+            className="btn-ghost !text-xs"
+          >
+            Configure Lanes
+          </button>
+          <button
+            onClick={() => navigate({ name: 'hq-create' })}
+            className="btn-primary"
+          >
+            New Job
+          </button>
+        </div>
+      </div>
+
+      {/* Pipeline legend */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
+          Pipeline:
+        </span>
+        {['idea', 'plan', 'create', 'review', 'edit', 'package', 'approve', 'publish', 'done'].map((s, i, arr) => (
+          <span key={s} className="flex items-center gap-1.5">
+            <span className={`font-mono text-[10px] uppercase tracking-[0.15em] ${stageColor(s)}`}>
+              {STAGE_LABELS[s as keyof typeof STAGE_LABELS] ?? s}
+            </span>
+            {i < arr.length - 1 && <span className="text-ink-700">→</span>}
+          </span>
+        ))}
+      </div>
+
+      {/* Lanes as columns */}
+      {loading ? (
+        <p className="text-ink-400">Loading…</p>
+      ) : jobs.length === 0 ? (
+        <div className="card p-12 text-center text-ink-400">
+          No production jobs yet. Create one to start the factory.
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+          {lanes.map((lane) => {
+            const laneJobs = jobs.filter((j) => {
+              const proj = j.project_id ? projectMap.get(j.project_id) ?? null : null
+              return proj?.type === laneToType(lane) || laneMatch(lane, proj ?? undefined, j)
+            })
+            return (
+              <div key={lane} className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-display text-lg font-semibold text-ink-100">
+                    {lane}
+                  </h2>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
+                    {laneJobs.length}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {laneJobs.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-ink-800 p-6 text-center text-xs text-ink-600">
+                      Empty
+                    </div>
+                  ) : (
+                    laneJobs.map((job) => {
+                      const proj = job.project_id ? projectMap.get(job.project_id) : null
+                      return (
+                        <button
+                          key={job.id}
+                          onClick={() =>
+                            job.project_id &&
+                            navigate({ name: 'hq-project', id: job.project_id })
+                          }
+                          className="card card-hover block w-full p-4 text-left"
+                        >
+                          <p className="text-sm font-medium text-ink-100">
+                            {job.title}
+                          </p>
+                          {proj && (
+                            <p className="mt-0.5 text-xs text-ink-500">
+                              {proj.title}
+                            </p>
+                          )}
+                          <div className="mt-2 flex items-center justify-between">
+                            <span
+                              className={`font-mono text-[10px] uppercase tracking-[0.2em] ${stageColor(job.stage)}`}
+                            >
+                              {STAGE_LABELS[job.stage as keyof typeof STAGE_LABELS] ?? job.stage}
+                            </span>
+                            <span className="font-mono text-[9px] text-ink-600">
+                              {timeAgo(job.updated_at)}
+                            </span>
+                          </div>
+                          {job.error && (
+                            <span className="mt-2 block font-mono text-[9px] uppercase tracking-[0.15em] text-blood-400">
+                              Blocked
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {showLaneConfig && (
+        <LaneConfigModal
+          lanes={lanes}
+          onSave={saveLanes}
+          onClose={() => setShowLaneConfig(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function laneToType(lane: string): string {
+  const map: Record<string, string> = {
+    'Short Film': 'short-film',
+    Story: 'story',
+    'Channel Piece': 'channel-piece',
+    'Social Clip': 'short-film',
+  }
+  return map[lane] ?? ''
+}
+
+function laneMatch(lane: string, project: Project | undefined, job: Job): boolean {
+  if (!project) return false
+  const type = project.type ?? ''
+  return laneToType(lane) === type
+}
+
+function LaneConfigModal({
+  lanes,
+  onSave,
+  onClose,
+}: {
+  lanes: string[]
+  onSave: (l: string[]) => void
+  onClose: () => void
+}) {
+  const [local, setLocal] = useState(lanes)
+  const [newLane, setNewLane] = useState('')
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/80 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="card w-full max-w-md p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="font-display text-xl font-semibold text-ink-100">
+          Configure lanes
+        </h2>
+        <p className="mt-2 text-sm text-ink-400">
+          Lanes are saved locally. They organize jobs by type.
+        </p>
+        <ul className="mt-4 space-y-2">
+          {local.map((lane, i) => (
+            <li key={i} className="flex items-center gap-2">
+              <span className="flex-1 text-sm text-ink-100">{lane}</span>
+              <button
+                onClick={() => setLocal(local.filter((_, idx) => idx !== i))}
+                className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500 hover:text-blood-400"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-4 flex gap-2">
+          <input
+            value={newLane}
+            onChange={(e) => setNewLane(e.target.value)}
+            className="field-input flex-1"
+            placeholder="New lane name"
+          />
+          <button
+            onClick={() => {
+              if (newLane.trim()) {
+                setLocal([...local, newLane.trim()])
+                setNewLane('')
+              }
+            }}
+            className="btn-ghost !text-xs"
+          >
+            Add
+          </button>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button onClick={onClose} className="btn-ghost">
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              onSave(local)
+              onClose()
+            }}
+            className="btn-primary"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
