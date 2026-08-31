@@ -11,6 +11,7 @@ import StudioOverview from './components/studio/StudioOverview'
 import GigScout from './components/studio/GigScout'
 import DraftingWorkspace from './components/studio/DraftingWorkspace'
 import HqShell from './components/hq/HqShell'
+import AuthGate from './components/hq/AuthGate'
 import CommandCenter from './components/hq/CommandCenter'
 import CreateFlow from './components/hq/CreateFlow'
 import ProjectsList, { ProjectDetail } from './components/hq/Projects'
@@ -28,35 +29,37 @@ export default function App() {
   // Headquarters routes
   if (route.name.startsWith('hq')) {
     return (
-      <div className="relative min-h-screen">
-        <div className="grain" aria-hidden="true" />
-        <div className="vignette" aria-hidden="true" />
-        <HqShell route={route}>
-          {route.name === 'hq-command' ? (
-            <CommandCenter />
-          ) : route.name === 'hq-create' ? (
-            <CreateFlow />
-          ) : route.name === 'hq-projects' ? (
-            <ProjectsList />
-          ) : route.name === 'hq-project' ? (
-            <ProjectDetail id={route.id} />
-          ) : route.name === 'hq-roundtable' ? (
-            <Roundtable projectId={route.projectId} />
-          ) : route.name === 'hq-assets' ? (
-            <AssetLibrary />
-          ) : route.name === 'hq-factory' ? (
-            <ContentFactory />
-          ) : route.name === 'hq-publish' ? (
-            <PublishingCenter />
-          ) : route.name === 'hq-tools' ? (
-            <ToolsConnections />
-          ) : route.name === 'hq-dock' ? (
-            <Dock />
-          ) : (
-            <CommandCenter />
-          )}
-        </HqShell>
-      </div>
+      <AuthGate>
+        <div className="relative min-h-screen">
+          <div className="grain" aria-hidden="true" />
+          <div className="vignette" aria-hidden="true" />
+          <HqShell route={route}>
+            {route.name === 'hq-command' ? (
+              <CommandCenter />
+            ) : route.name === 'hq-create' ? (
+              <CreateFlow />
+            ) : route.name === 'hq-projects' ? (
+              <ProjectsList />
+            ) : route.name === 'hq-project' ? (
+              <ProjectDetail id={route.id} />
+            ) : route.name === 'hq-roundtable' ? (
+              <Roundtable projectId={route.projectId} />
+            ) : route.name === 'hq-assets' ? (
+              <AssetLibrary />
+            ) : route.name === 'hq-factory' ? (
+              <ContentFactory />
+            ) : route.name === 'hq-publish' ? (
+              <PublishingCenter />
+            ) : route.name === 'hq-tools' ? (
+              <ToolsConnections />
+            ) : route.name === 'hq-dock' ? (
+              <Dock />
+            ) : (
+              <CommandCenter />
+            )}
+          </HqShell>
+        </div>
+      </AuthGate>
     )
   }
 
