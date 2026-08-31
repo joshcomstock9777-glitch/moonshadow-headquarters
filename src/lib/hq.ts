@@ -206,13 +206,16 @@ export const DESTINATION_LABELS: Record<PublishDestination, string> = {
   other: 'Other',
 }
 
+// A destination is only available after Headquarters has a real external
+// publisher connector that can return verifiable publication evidence. Keep
+// every destination fail-closed until that connector is implemented and live.
 export const DESTINATION_AVAILABILITY: Record<PublishDestination, boolean> = {
   youtube: false,
   instagram: false,
   facebook: false,
   tiktok: false,
   x: false,
-  other: true,
+  other: false,
 }
 
 // ── Approval categories ─────────────────────────────────────────────────────
