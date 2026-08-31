@@ -29,15 +29,6 @@ export default function ToolsConnections() {
     void load()
   }, [load])
 
-  async function updateStatus(id: string, status: string) {
-    const { error } = await supabase
-      .from('connections')
-      .update({ status })
-      .eq('id', id)
-    if (error) return
-    void load()
-  }
-
   return (
     <div className="space-y-10">
       <div>
@@ -49,52 +40,34 @@ export default function ToolsConnections() {
           <span className="italic text-blood-500"> connected.</span>
         </h1>
         <p className="mt-4 max-w-2xl text-ink-300">
-          Registered studios, modules, and external services. Each shows an
-          honest status — we never pretend a connection works when it doesn't.
+          Registered studios, modules, and external services. Status is read-only here and must be written by real verification or backend connection flows.
         </p>
       </div>
 
-      {/* Registered modules */}
       <section>
-        <h2 className="mb-4 font-display text-xl font-semibold text-ink-100">
-          Registered Modules
-        </h2>
+        <h2 className="mb-4 font-display text-xl font-semibold text-ink-100">Registered Modules</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {MODULES.map((m) => (
             <div key={m.id} className="card p-6">
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="text-base font-semibold text-ink-100">
-                    {m.name}
-                  </h3>
-                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
-                    {m.category}
-                  </p>
+                  <h3 className="text-base font-semibold text-ink-100">{m.name}</h3>
+                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">{m.category}</p>
                 </div>
-                <span
-                  className={`rounded-full border px-2.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.15em] ${
-                    MODULE_STATUS_STYLES[m.status] ?? ''
-                  }`}
-                >
+                <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.15em] ${MODULE_STATUS_STYLES[m.status] ?? ''}`}>
                   {MODULE_STATUS_LABELS[m.status] ?? m.status}
                 </span>
               </div>
-              <p className="mt-3 text-sm leading-relaxed text-ink-300">
-                {m.desc}
-              </p>
+              <p className="mt-3 text-sm leading-relaxed text-ink-300">{m.desc}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* External connections */}
       <section>
-        <h2 className="mb-4 font-display text-xl font-semibold text-ink-100">
-          External Connections
-        </h2>
+        <h2 className="mb-4 font-display text-xl font-semibold text-ink-100">External Connections</h2>
         <p className="mb-4 text-sm text-ink-400">
-          Secrets belong server-side and are never exposed in the frontend.
-          Status shown here reflects the connection state, not credentials.
+          Secrets belong server-side and are never exposed in the frontend. A connection cannot be promoted to connected from this screen; status must come from verified backend evidence.
         </p>
         {loading ? (
           <p className="text-ink-400">Loading…</p>
@@ -105,91 +78,46 @@ export default function ToolsConnections() {
               if (catConns.length === 0) return null
               return (
                 <div key={cat}>
-                  <h3 className="mb-2 font-mono text-[10px] uppercase tracking-[0.3em] text-ink-500">
-                    {cat}
-                  </h3>
+                  <h3 className="mb-2 font-mono text-[10px] uppercase tracking-[0.3em] text-ink-500">{cat}</h3>
                   <ul className="space-y-2">
                     {catConns.map((conn) => (
                       <li key={conn.id} className="card p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium text-ink-100">
-                                {conn.name}
-                              </p>
-                              <span
-                                className={`rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.15em] ${
-                                  CONNECTION_STATUS_STYLES[conn.status] ?? ''
-                                }`}
-                              >
+                              <p className="text-sm font-medium text-ink-100">{conn.name}</p>
+                              <span className={`rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.15em] ${CONNECTION_STATUS_STYLES[conn.status] ?? ''}`}>
                                 {CONNECTION_STATUS_LABELS[conn.status] ?? conn.status}
                               </span>
                             </div>
-                            {conn.detail && (
-                              <p className="mt-1 text-xs text-ink-400">
-                                {conn.detail}
-                              </p>
-                            )}
+                            {conn.detail && <p className="mt-1 text-xs text-ink-400">{conn.detail}</p>}
                           </div>
-                          <div className="flex flex-none items-center gap-2">
-                            <select
-                              value={conn.status}
-                              onChange={(e) => updateStatus(conn.id, e.target.value)}
-                              className="field-select !w-auto !py-1.5 !text-[11px]"
-                            >
-                              {Object.entries(CONNECTION_STATUS_LABELS).map(
-                                ([value, label]) => (
-                                  <option key={value} value={value}>
-                                    {label}
-                                  </option>
-                                ),
-                              )}
-                            </select>
-                            <button
-                              onClick={() =>
-                                setExpanded(expanded === conn.id ? null : conn.id)
-                              }
-                              className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400 hover:text-blood-300"
-                            >
-                              {expanded === conn.id ? 'Hide' : 'Details'}
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => setExpanded(expanded === conn.id ? null : conn.id)}
+                            className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400 hover:text-blood-300"
+                          >
+                            {expanded === conn.id ? 'Hide' : 'Details'}
+                          </button>
                         </div>
                         {expanded === conn.id && (
                           <div className="mt-3 border-t border-ink-800 pt-3 text-xs text-ink-400">
                             {conn.id === 'moonshadow-path' ? (
                               <div className="space-y-2">
+                                <p><span className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">Known Path Contract</span></p>
                                 <p>
-                                  <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-amber-300">
-                                    Adapter Boundary
-                                  </span>
-                                </p>
-                                <p>
-                                  Moonshadow Path is the existing backend
-                                  routing system. Headquarters is architected
-                                  so Path can become an orchestration provider
-                                  through an adapter. The following API
-                                  information is required before wiring:
+                                  Headquarters uses the existing Moonshadow Path session contract already proven by Studio Go. No replacement protocol is invented here.
                                 </p>
                                 <ul className="ml-4 list-disc space-y-1">
-                                  <li>Path endpoint URL(s) and auth method</li>
-                                  <li>Job/event message schema</li>
-                                  <li>Routing callback or webhook contract</li>
-                                  <li>Rate limits and retry behavior</li>
+                                  <li>Production base: https://moonshadow-path-proof.vercel.app</li>
+                                  <li>Create session: POST /api/sessions</li>
+                                  <li>Read session: GET /api/sessions/:sessionId</li>
+                                  <li>Terminal evidence: final/error session state plus correlation ID and transcript</li>
+                                  <li>Retry/timeout behavior belongs in the Path client and backend, not a manual status selector</li>
                                 </ul>
-                                <p className="text-ink-500">
-                                  No Path API contracts are invented. The
-                                  adapter boundary is documented; wiring waits
-                                  for the real contract.
-                                </p>
                               </div>
                             ) : (
                               <p>
-                                Connection status is managed here. Actual
-                                credential handling happens server-side. To
-                                connect this service, configure the
-                                credentials in the backend — they are never
-                                exposed in frontend code.
+                                This status is informational. Actual credential setup, verification, refresh, and health checks must be performed by the service-specific backend integration before Headquarters marks it connected.
                               </p>
                             )}
                           </div>
@@ -204,14 +132,10 @@ export default function ToolsConnections() {
         )}
       </section>
 
-      {/* Editor adapter info */}
       <section className="card p-6">
-        <h2 className="font-display text-xl font-semibold text-ink-100">
-          Editor Connection — Adapter Boundary
-        </h2>
+        <h2 className="font-display text-xl font-semibold text-ink-100">Editor Connection — Adapter Boundary</h2>
         <p className="mt-2 text-sm text-ink-400">
-          Headquarters is designed to hand assets and projects into the
-          existing Moonshadow Editor. The editor is not recreated here.
+          Headquarters hands assets and projects into the shared Moonshadow Editor core rather than recreating a second editor implementation.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {[
@@ -222,18 +146,14 @@ export default function ToolsConnections() {
             ['Receive previews', 'Receive preview renders back into the asset library.'],
             ['Receive exports', 'Final exports land as assets and can enter the publishing queue.'],
           ].map(([label, desc]) => (
-            <div
-              key={label}
-              className="rounded-lg border border-ink-800 bg-ink-900/30 p-4"
-            >
+            <div key={label} className="rounded-lg border border-ink-800 bg-ink-900/30 p-4">
               <p className="text-sm font-medium text-ink-100">{label}</p>
               <p className="mt-1 text-xs text-ink-400">{desc}</p>
             </div>
           ))}
         </div>
         <p className="mt-4 text-xs text-ink-500">
-          A temporary internal preview surface is available in the Project
-          detail view until the real editor is connected.
+          Until the real editor adapter reports healthy, Headquarters must show this boundary as incomplete rather than treating the internal preview as the production editor.
         </p>
       </section>
     </div>
