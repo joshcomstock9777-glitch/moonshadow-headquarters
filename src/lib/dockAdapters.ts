@@ -15,12 +15,6 @@ import type {
 } from './dockTypes'
 import { CAPABILITIES } from './dockTypes'
 
-// ── Adapter interface ────────────────────────────────────────────────────────
-//
-// Every adapter implements this shape. The test() method performs a real
-// network call and returns an honest result. The send() method delivers a
-// handoff envelope. Neither fakes success.
-
 export interface AdapterTestResult {
   success: boolean
   httpStatus: number | null
@@ -44,7 +38,6 @@ export interface DockAdapter {
   send(machine: DockMachine, envelope: Record<string, unknown>): Promise<AdapterSendResult>
 }
 
-// ── Helper: timed fetch with timeout ─────────────────────────────────────────
 async function timedFetch(
   url: string,
   options: RequestInit,
@@ -66,7 +59,6 @@ function truncateBody(text: string, max = 10000): string {
   return text.length > max ? text.slice(0, max) + '\n…[truncated]' : text
 }
 
-// ── REST adapter ─────────────────────────────────────────────────────────────
 const restAdapter: DockAdapter = {
   type: 'rest',
   description: 'REST/HTTP API adapter. Sends JSON requests to an API endpoint.',
@@ -115,7 +107,6 @@ const restAdapter: DockAdapter = {
   },
 }
 
-// ── Webhook adapter ──────────────────────────────────────────────────────────
 const webhookAdapter: DockAdapter = {
   type: 'webhook',
   description: 'Webhook adapter. Sends a POST payload to a webhook URL.',
@@ -167,9 +158,6 @@ const webhookAdapter: DockAdapter = {
   },
 }
 
-// ── MCP adapter ──────────────────────────────────────────────────────────────
-// MCP servers expose tools via a JSON-RPC-like protocol. This adapter sends
-// a tool list request to verify connectivity.
 const mcpAdapter: DockAdapter = {
   type: 'mcp',
   description: 'MCP (Model Context Protocol) server adapter. Sends JSON-RPC tool list requests.',
@@ -226,9 +214,6 @@ const mcpAdapter: DockAdapter = {
   },
 }
 
-// ── Web application adapter ──────────────────────────────────────────────────
-// For externally hosted web apps that may not have a formal API. We test
-// connectivity by checking if the URL responds with any HTML.
 const webAdapter: DockAdapter = {
   type: 'web',
   description: 'Web application adapter. Tests connectivity to a hosted web app URL.',
@@ -240,7 +225,7 @@ const webAdapter: DockAdapter = {
     try {
       const { response, latencyMs } = await timedFetch(url, {
         method: 'GET',
-        headers: { 'Accept': 'text/html' },
+        headers: { Accept: 'text/html' },
       })
       const body = await response.text()
       return {
@@ -254,9 +239,7 @@ const webAdapter: DockAdapter = {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: (err as Error).message }
     }
   },
-  async send(machine, _envelope) {
-    // Web apps without a formal API can't receive handoffs programmatically.
-    // The handoff is "prepared" — the creator opens the URL manually.
+  async send(_machine, _envelope) {
     return {
       success: false,
       httpStatus: null,
@@ -267,8 +250,6 @@ const webAdapter: DockAdapter = {
   },
 }
 
-// ── GitHub-hosted adapter ────────────────────────────────────────────────────
-// Tests connectivity to a GitHub repository by fetching the repo API endpoint.
 const githubAdapter: DockAdapter = {
   type: 'github',
   description: 'GitHub-hosted application adapter. Tests repo accessibility via GitHub API.',
@@ -277,7 +258,6 @@ const githubAdapter: DockAdapter = {
     if (!repo) {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: 'No GitHub repository URL configured' }
     }
-    // Extract owner/repo from URL
     const match = repo.match(/github\.com[/:]([^/]+)\/([^/]+)/)
     if (!match) {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: 'Invalid GitHub repository URL' }
@@ -286,7 +266,7 @@ const githubAdapter: DockAdapter = {
     try {
       const { response, latencyMs } = await timedFetch(apiUrl, {
         method: 'GET',
-        headers: { 'Accept': 'application/vnd.github+json' },
+        headers: { Accept: 'application/vnd.github+json' },
       })
       const body = await response.text()
       return {
@@ -300,9 +280,7 @@ const githubAdapter: DockAdapter = {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: (err as Error).message }
     }
   },
-  async send(machine, envelope) {
-    // GitHub-hosted apps need a separate runtime. We record the handoff
-    // but cannot send it programmatically without a runner.
+  async send(_machine, _envelope) {
     return {
       success: false,
       httpStatus: null,
@@ -313,9 +291,6 @@ const githubAdapter: DockAdapter = {
   },
 }
 
-// ── File adapter ─────────────────────────────────────────────────────────────
-// File import/export adapter. No network call — just verifies that a file
-// path/URL is specified.
 const fileAdapter: DockAdapter = {
   type: 'file',
   description: 'File import/export adapter. No network call — handoffs are file-based.',
@@ -342,19 +317,20 @@ const fileAdapter: DockAdapter = {
   },
 }
 
-// ── Internal adapter ─────────────────────────────────────────────────────────
-// For Headquarters-internal modules (Kimmy, Content Factory, etc.). These
-// don't need network calls — they're invoked in-process.
+// Registration is metadata, not proof of an executable internal integration.
+// Until Headquarters has a concrete in-process invocation registry, both test
+// and send must fail honestly so Dock cannot promote these modules to healthy /
+// connected merely because a row exists in dock_machines.
 const internalAdapter: DockAdapter = {
   type: 'internal',
-  description: 'Internal module adapter. For Headquarters-internal modules invoked in-process.',
+  description: 'Internal module adapter. Requires a concrete in-process invocation contract before it can report healthy.',
   async test(machine) {
     return {
-      success: true,
+      success: false,
       httpStatus: null,
-      responseBody: `Internal module "${machine.name}" registered.`,
+      responseBody: null,
       latencyMs: 0,
-      error: null,
+      error: `Internal module "${machine.name}" is registered but has no executable invocation contract.`,
     }
   },
   async send(machine, _envelope) {
@@ -368,7 +344,6 @@ const internalAdapter: DockAdapter = {
   },
 }
 
-// ── Adapter registry ─────────────────────────────────────────────────────────
 const ADAPTERS: Record<AdapterType, DockAdapter> = {
   rest: restAdapter,
   webhook: webhookAdapter,
@@ -387,12 +362,6 @@ export function getAdapterDescription(type: string): string {
   const adapter = getAdapter(type)
   return adapter?.description ?? 'Unknown adapter type'
 }
-
-// ── Capability discovery ─────────────────────────────────────────────────────
-//
-// Herman asks: "Which currently available machines can generate an image?"
-// This function returns truthful candidates based on registered capabilities
-// and connection status.
 
 export function findMachinesByCapability(
   machines: DockMachine[],
@@ -417,13 +386,6 @@ export function findConnectedMachinesByCapability(
 export function allCapabilities(): readonly Capability[] {
   return CAPABILITIES
 }
-
-// ── Handoff envelope builder ─────────────────────────────────────────────────
-//
-// Creates a standardized payload that can move work between applications.
-// The envelope carries: job ID, project ID, correlation ID, requested action,
-// creator instructions, text/context, asset references, source and destination
-// application, expected output, approval state, provenance, timestamps, status.
 
 export interface HandoffEnvelopeInput {
   jobId?: string | null
@@ -458,11 +420,6 @@ export function buildHandoffEnvelope(input: HandoffEnvelopeInput) {
   }
 }
 
-// ── Manifest builder ─────────────────────────────────────────────────────────
-//
-// Creates a portable Machine Manifest from user-provided information.
-// The manifest is both human-readable and machine-readable (JSONB).
-
 export interface ManifestInput {
   name: string
   description: string
@@ -487,11 +444,6 @@ export function buildManifest(input: ManifestInput): MachineManifest {
     currently_available: input.currentlyAvailable,
   }
 }
-
-// ── Test result persistence ──────────────────────────────────────────────────
-//
-// Saves a real test result to the database. The UI calls this after an
-// adapter test completes so results are persistent and viewable later.
 
 export async function saveTestResult(
   machineId: string,
@@ -524,11 +476,6 @@ export async function saveTestResult(
   return data?.[0] ?? null
 }
 
-// ── Machine status updater ───────────────────────────────────────────────────
-//
-// After a test, update the machine's connection and health status based on
-// the real result. Never claim "connected" without a successful test.
-
 export async function updateMachineHealth(
   machineId: string,
   testResult: AdapterTestResult,
@@ -543,8 +490,6 @@ export async function updateMachineHealth(
   } else {
     updates.last_failure_at = new Date().toISOString()
     updates.last_failure_reason = testResult.error
-    // Don't downgrade from 'development' or 'needs-auth' based on a test failure
-    // Only mark broken if it was previously claiming to work
   }
 
   await fetch(
