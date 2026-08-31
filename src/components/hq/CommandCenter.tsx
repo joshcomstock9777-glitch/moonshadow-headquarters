@@ -1,14 +1,13 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import type { Job, Approval, Activity, Project } from '../../lib/hqTypes'
+import type { Job, Approval, Activity, Project, Connection } from '../../lib/hqTypes'
 import {
   STAGE_LABELS,
   stageColor,
   timeAgo,
   ACTIVITY_CATEGORY_STYLES,
-  MODULES,
-  MODULE_STATUS_STYLES,
-  MODULE_STATUS_LABELS,
+  CONNECTION_STATUS_STYLES,
+  CONNECTION_STATUS_LABELS,
 } from '../../lib/hq'
 import { navigate } from '../../lib/router'
 
@@ -17,11 +16,13 @@ export default function CommandCenter() {
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [activity, setActivity] = useState<Activity[]>([])
   const [projects, setProjects] = useState<Project[]>([])
+  const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
+  const [connectionLoadError, setConnectionLoadError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [j, a, act, p] = await Promise.all([
+    const [j, a, act, p, c] = await Promise.all([
       supabase
         .from('jobs')
         .select('*')
@@ -42,11 +43,17 @@ export default function CommandCenter() {
         .select('*')
         .order('updated_at', { ascending: false })
         .limit(6),
+      supabase
+        .from('connections')
+        .select('*')
+        .order('name', { ascending: true }),
     ])
     setJobs(j.data ?? [])
     setApprovals(a.data ?? [])
     setActivity(act.data ?? [])
     setProjects(p.data ?? [])
+    setConnections(c.data ?? [])
+    setConnectionLoadError(c.error?.message ?? null)
     setLoading(false)
   }, [])
 
@@ -54,13 +61,12 @@ export default function CommandCenter() {
     void load()
   }, [load])
 
-  const connectedCount = MODULES.filter((m) => m.status === 'connected').length
+  const connectedCount = connections.filter((connection) => connection.status === 'connected').length
   const blocked = jobs.filter((j) => j.error)
   const waitingApprovals = approvals.length
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div>
         <p className="section-eyebrow">
           <span className="h-px w-8 bg-blood-700" /> Command Center
@@ -70,12 +76,11 @@ export default function CommandCenter() {
           <span className="italic text-blood-500"> studio.</span>
         </h1>
         <p className="mt-4 max-w-2xl text-ink-300">
-          Active jobs, waiting approvals, recent activity, and connected
-          modules — all in one place.
+          Active jobs, waiting approvals, recent activity, and live connection
+          evidence — all in one place.
         </p>
       </div>
 
-      {/* Quick stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Active jobs"
@@ -96,14 +101,13 @@ export default function CommandCenter() {
           onClick={() => navigate({ name: 'hq-projects' })}
         />
         <StatCard
-          label="Connected modules"
-          value={`${connectedCount}/${MODULES.length}`}
+          label="Verified connections"
+          value={connectionLoadError ? 'Unknown' : `${connectedCount}/${connections.length}`}
           accent="text-ink-200"
           onClick={() => navigate({ name: 'hq-tools' })}
         />
       </div>
 
-      {/* New job entry */}
       <div className="card p-6">
         <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <div>
@@ -124,7 +128,6 @@ export default function CommandCenter() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        {/* Active jobs */}
         <section className="card p-6">
           <div className="flex items-center justify-between">
             <h2 className="font-display text-xl font-semibold text-ink-100">
@@ -184,7 +187,6 @@ export default function CommandCenter() {
           )}
         </section>
 
-        {/* Waiting approvals */}
         <section className="card p-6">
           <h2 className="font-display text-xl font-semibold text-ink-100">
             Waiting approvals
@@ -215,7 +217,6 @@ export default function CommandCenter() {
         </section>
       </div>
 
-      {/* Activity stream */}
       <section className="card p-6">
         <h2 className="font-display text-xl font-semibold text-ink-100">
           System activity
@@ -254,41 +255,57 @@ export default function CommandCenter() {
         )}
       </section>
 
-      {/* Connected modules */}
       <section className="card p-6">
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-xl font-semibold text-ink-100">
-            Connected modules
-          </h2>
+          <div>
+            <h2 className="font-display text-xl font-semibold text-ink-100">
+              Connection evidence
+            </h2>
+            <p className="mt-1 text-sm text-ink-400">
+              These states are read from the live Headquarters connections table, not frontend defaults.
+            </p>
+          </div>
           <button
             onClick={() => navigate({ name: 'hq-tools' })}
             className="font-mono text-[10px] uppercase tracking-[0.2em] text-blood-300 hover:text-blood-200"
           >
-            Manage →
+            Inspect →
           </button>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {MODULES.map((m) => (
-            <div
-              key={m.id}
-              className="rounded-xl border border-ink-800 bg-ink-900/30 p-4"
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-ink-100">{m.name}</p>
-              </div>
-              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
-                {m.category}
-              </p>
-              <span
-                className={`mt-3 inline-block rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.15em] ${
-                  MODULE_STATUS_STYLES[m.status] ?? ''
-                }`}
+
+        {connectionLoadError ? (
+          <div className="mt-4 rounded-lg border border-blood-700/40 bg-blood-700/5 p-4 text-sm text-blood-300">
+            Connection evidence unavailable: {connectionLoadError}
+          </div>
+        ) : connections.length === 0 ? (
+          <div className="mt-4 rounded-lg border border-dashed border-ink-700 p-6 text-sm text-ink-400">
+            No connection records are available. Headquarters will not infer a connected state.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {connections.map((connection) => (
+              <div
+                key={connection.id}
+                className="rounded-xl border border-ink-800 bg-ink-900/30 p-4"
               >
-                {MODULE_STATUS_LABELS[m.status] ?? m.status}
-              </span>
-            </div>
-          ))}
-        </div>
+                <p className="text-sm font-medium text-ink-100">{connection.name}</p>
+                <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
+                  {connection.category}
+                </p>
+                <span
+                  className={`mt-3 inline-block rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.15em] ${
+                    CONNECTION_STATUS_STYLES[connection.status] ?? ''
+                  }`}
+                >
+                  {CONNECTION_STATUS_LABELS[connection.status] ?? connection.status}
+                </span>
+                <p className="mt-2 font-mono text-[9px] text-ink-600">
+                  Updated {timeAgo(connection.updated_at)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   )
