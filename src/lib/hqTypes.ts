@@ -70,6 +70,9 @@ export interface RoundtableMessage {
   addressed_to: string | null
   kind: string
   proposed_action: string | null
+  path_session_id: string | null
+  path_correlation_id: string | null
+  path_target: string | null
   created_at: string
 }
 
