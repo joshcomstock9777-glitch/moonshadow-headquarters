@@ -1,3 +1,5 @@
+import { supabase } from './supabase'
+
 // Moonshadow Headquarters — shared constants, types, and helpers
 
 // ── Job pipeline stages ─────────────────────────────────────────────────────
@@ -277,7 +279,7 @@ export function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-export function logActivity(
+export async function logActivity(
   projectId: string | null,
   jobId: string | null,
   actor: string,
@@ -285,24 +287,19 @@ export function logActivity(
   category: string = 'info',
   detail: string | null = null,
 ) {
-  // fire-and-forget insert — caller does not await
-  return fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/activity`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      Prefer: 'return=minimal',
-    },
-    body: JSON.stringify({
-      project_id: projectId,
-      job_id: jobId,
-      actor,
-      action,
-      category,
-      detail,
-    }),
-  }).catch(() => {})
+  const { error } = await supabase.from('activity').insert({
+    project_id: projectId,
+    job_id: jobId,
+    actor,
+    action,
+    category,
+    detail,
+  })
+
+  if (error) {
+    console.error('Headquarters activity evidence failed:', error.message)
+    throw error
+  }
 }
 
 export function countWords(text: string | null): number {
