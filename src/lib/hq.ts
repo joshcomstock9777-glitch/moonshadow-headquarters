@@ -65,61 +65,63 @@ export const ROLE_META: Record<Role, { name: string; title: string; glyph: strin
 }
 
 // ── Registered modules / studios ────────────────────────────────────────────
+// These are descriptive registry entries only. Availability must come from
+// live connection/Dock evidence; static metadata must never claim success.
 export const MODULES = [
   {
     id: 'studio-go',
     name: 'Studio Go',
     category: 'Capture',
-    status: 'needs-auth',
+    status: 'unavailable',
     desc: 'Capture and ingest raw media from shoots, location recordings, and live sessions.',
   },
   {
     id: 'editor',
     name: 'Moonshadow Editor',
     category: 'Edit',
-    status: 'needs-auth',
+    status: 'unavailable',
     desc: 'Creative Operating System editor. Load media, open a project, request edits, receive exports.',
   },
   {
     id: 'kimmy',
     name: 'Kimmy',
     category: 'Writing',
-    status: 'connected',
+    status: 'unavailable',
     desc: 'Atmospheric horror and sci-fi writing — short stories, scenes, concepts, scripts.',
   },
   {
     id: 'skin-studio',
     name: 'Skin Studio',
     category: 'Image',
-    status: 'needs-auth',
+    status: 'unavailable',
     desc: 'Text-to-image generation and editing. Portrait, square, and landscape formats with version history.',
   },
   {
     id: 'content-factory',
     name: 'Content Factory',
     category: 'Production',
-    status: 'connected',
+    status: 'unavailable',
     desc: 'Repeatable short-form production jobs. Configurable channels and lanes.',
   },
   {
     id: 'code-lab',
     name: 'Code Lab',
     category: 'Development',
-    status: 'needs-auth',
+    status: 'unavailable',
     desc: 'Scripts, tooling, and integrations development environment.',
   },
   {
     id: 'asset-library',
     name: 'Asset Library',
     category: 'Storage',
-    status: 'connected',
+    status: 'unavailable',
     desc: 'Project-aware media library with provenance. Images, video, audio, scripts, documents.',
   },
   {
     id: 'publishing',
     name: 'Publishing',
     category: 'Distribution',
-    status: 'connected',
+    status: 'unavailable',
     desc: 'Publishing queue with destination connectors and scheduling.',
   },
 ] as const
@@ -208,13 +210,15 @@ export const DESTINATION_LABELS: Record<PublishDestination, string> = {
   other: 'Other',
 }
 
+// Frontend availability is fail-closed. A destination becomes actionable only
+// after a real server-side connector returns external confirmation evidence.
 export const DESTINATION_AVAILABILITY: Record<PublishDestination, boolean> = {
   youtube: false,
   instagram: false,
   facebook: false,
   tiktok: false,
   x: false,
-  other: true,
+  other: false,
 }
 
 // ── Approval categories ─────────────────────────────────────────────────────
