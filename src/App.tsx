@@ -18,7 +18,7 @@ import ProjectsList, { ProjectDetail } from './components/hq/Projects'
 import Roundtable from './components/hq/Roundtable'
 import AssetLibrary from './components/hq/AssetLibrary'
 import ContentFactory from './components/hq/ContentFactory'
-import PublishingCenter from './components/hq/PublishingCenter'
+import PublishingCenterVerified from './components/hq/PublishingCenterVerified'
 import ToolsConnections from './components/hq/ToolsConnections'
 import Dock from './components/hq/Dock'
 import { useRoute, navigate } from './lib/router'
@@ -49,7 +49,7 @@ export default function App() {
             ) : route.name === 'hq-factory' ? (
               <ContentFactory />
             ) : route.name === 'hq-publish' ? (
-              <PublishingCenter />
+              <PublishingCenterVerified />
             ) : route.name === 'hq-tools' ? (
               <ToolsConnections />
             ) : route.name === 'hq-dock' ? (
