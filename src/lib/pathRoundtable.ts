@@ -20,6 +20,9 @@ type PathSession = {
 const DEFAULT_PATH_BASE_URL = 'https://moonshadow-path-proof.vercel.app'
 const POLL_INTERVAL_MS = 1800
 const TIMEOUT_MS = 120000
+const REQUEST_TIMEOUT_MS = 15000
+const SESSION_READ_ATTEMPTS = 3
+const SESSION_READ_BACKOFF_MS = 750
 
 const ROLE_INSTRUCTIONS: Record<RoundtableRole, string> = {
   herman:
@@ -64,8 +67,25 @@ async function readJson(response: Response): Promise<PathSession> {
   }
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`Path request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`)
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function createSession(role: RoundtableRole, creatorMessage: string): Promise<PathSession> {
-  const response = await fetch(pathUrl('sessions'), {
+  // Do not automatically retry this POST. If Path accepted the request but the
+  // response was lost, retrying here could create a duplicate session.
+  const response = await fetchWithTimeout(pathUrl('sessions'), {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({
@@ -84,15 +104,40 @@ async function createSession(role: RoundtableRole, creatorMessage: string): Prom
   return data
 }
 
-async function fetchSession(sessionId: string): Promise<PathSession> {
-  const response = await fetch(pathUrl(`sessions/${encodeURIComponent(sessionId)}`), {
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500
+}
+
+async function fetchSessionOnce(sessionId: string): Promise<PathSession> {
+  const response = await fetchWithTimeout(pathUrl(`sessions/${encodeURIComponent(sessionId)}`), {
     headers: { accept: 'application/json' },
   })
   const data = await readJson(response)
   if (!response.ok) {
-    throw new Error(data.error || `Path session read failed (${response.status})`)
+    const error = new Error(data.error || `Path session read failed (${response.status})`)
+    ;(error as Error & { retryable?: boolean }).retryable = isRetryableStatus(response.status)
+    throw error
   }
   return data
+}
+
+async function fetchSession(sessionId: string): Promise<PathSession> {
+  let lastError: unknown = null
+
+  for (let attempt = 1; attempt <= SESSION_READ_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetchSessionOnce(sessionId)
+    } catch (error) {
+      lastError = error
+      const retryable = !(error instanceof Error) ||
+        (error as Error & { retryable?: boolean }).retryable !== false
+
+      if (!retryable || attempt === SESSION_READ_ATTEMPTS) break
+      await sleep(SESSION_READ_BACKOFF_MS * attempt)
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Path session read failed')
 }
 
 function sleep(ms: number): Promise<void> {
