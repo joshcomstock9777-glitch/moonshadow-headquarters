@@ -13,14 +13,24 @@ import {
 export default function ToolsConnections() {
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
+    setLoadError('')
+    const { data, error } = await supabase
       .from('connections')
       .select('*')
       .order('category', { ascending: true })
+
+    if (error) {
+      setConnections([])
+      setLoadError(error.message || 'Headquarters could not read live connection evidence from Supabase.')
+      setLoading(false)
+      return
+    }
+
     setConnections(data ?? [])
     setLoading(false)
   }, [])
@@ -65,12 +75,29 @@ export default function ToolsConnections() {
       </section>
 
       <section>
-        <h2 className="mb-4 font-display text-xl font-semibold text-ink-100">External Connections</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-xl font-semibold text-ink-100">External Connections</h2>
+          <button onClick={() => void load()} disabled={loading} className="btn-ghost">
+            {loading ? 'Checking…' : 'Refresh evidence'}
+          </button>
+        </div>
         <p className="mb-4 text-sm text-ink-400">
           Secrets belong server-side and are never exposed in the frontend. A connection cannot be promoted to connected from this screen; status must come from verified backend evidence.
         </p>
         {loading ? (
-          <p className="text-ink-400">Loading…</p>
+          <p className="text-ink-400">Loading live connection evidence…</p>
+        ) : loadError ? (
+          <div className="rounded-lg border border-blood-700/60 bg-blood-900/20 p-4">
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-blood-300">Live evidence unavailable</p>
+            <p className="mt-2 text-sm text-ink-300">
+              Headquarters could not verify external connection status from Supabase. No connection is being treated as connected from this screen.
+            </p>
+            <p className="mt-2 break-words text-xs text-ink-500">{loadError}</p>
+          </div>
+        ) : connections.length === 0 ? (
+          <div className="rounded-lg border border-ink-800 bg-ink-900/30 p-4 text-sm text-ink-400">
+            Supabase returned no connection evidence. Nothing is marked connected.
+          </div>
         ) : (
           <div className="space-y-3">
             {CONNECTION_CATEGORIES.map((cat) => {
