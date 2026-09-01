@@ -14,6 +14,8 @@ const NAV_ITEMS = [
   { name: 'hq-dock', label: 'Dock', href: '#/hq/dock', glyph: '⬚' },
 ] as const
 
+type ShellEvidenceState = 'loading' | 'verified' | 'error'
+
 export default function HqShell({
   route,
   children,
@@ -21,14 +23,19 @@ export default function HqShell({
   route: Route
   children: React.ReactNode
 }) {
-  const [approvals, setApprovals] = useState(0)
-  const [activeJobs, setActiveJobs] = useState(0)
+  const [approvals, setApprovals] = useState<number | null>(null)
+  const [activeJobs, setActiveJobs] = useState<number | null>(null)
+  const [evidenceState, setEvidenceState] = useState<ShellEvidenceState>('loading')
+  const [evidenceError, setEvidenceError] = useState<string | null>(null)
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [route.name])
 
   async function load() {
+    setEvidenceState('loading')
+    setEvidenceError(null)
+
     const [a, j] = await Promise.all([
       supabase.from('approvals').select('id').eq('status', 'pending'),
       supabase
@@ -36,11 +43,25 @@ export default function HqShell({
         .select('stage')
         .not('stage', 'in', '("done")'),
     ])
-    if (a.data) setApprovals(a.data.length)
-    if (j.data) setActiveJobs(j.data.length)
+
+    if (a.error || j.error) {
+      setApprovals(null)
+      setActiveJobs(null)
+      setEvidenceState('error')
+      setEvidenceError(
+        [a.error?.message, j.error?.message].filter(Boolean).join(' · ') ||
+          'Headquarters evidence read failed',
+      )
+      return
+    }
+
+    setApprovals(a.data?.length ?? 0)
+    setActiveJobs(j.data?.length ?? 0)
+    setEvidenceState('verified')
   }
 
   const activeName = route.name
+  const verifiedApprovals = evidenceState === 'verified' ? approvals : null
 
   return (
     <div className="min-h-screen">
@@ -75,11 +96,13 @@ export default function HqShell({
               >
                 <span className="text-[12px] opacity-60">{item.glyph}</span>
                 {item.label}
-                {item.name === 'hq-command' && approvals > 0 && (
-                  <span className="rounded-full bg-blood-600/50 px-1.5 text-[9px] text-ink-100">
-                    {approvals}
-                  </span>
-                )}
+                {item.name === 'hq-command' &&
+                  verifiedApprovals !== null &&
+                  verifiedApprovals > 0 && (
+                    <span className="rounded-full bg-blood-600/50 px-1.5 text-[9px] text-ink-100">
+                      {verifiedApprovals}
+                    </span>
+                  )}
               </a>
             ))}
           </div>
@@ -98,13 +121,37 @@ export default function HqShell({
       </main>
 
       <footer className="border-t border-ink-800/60 px-6 py-6">
-        <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between">
-          <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink-500">
-            Moonshadow Headquarters · {activeJobs} active jobs · {approvals} pending approvals
-          </span>
+        <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between gap-4">
+          <div className="min-w-0">
+            {evidenceState === 'verified' ? (
+              <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink-500">
+                Moonshadow Headquarters · {activeJobs ?? 0} active jobs · {approvals ?? 0} pending approvals · live evidence verified
+              </span>
+            ) : evidenceState === 'loading' ? (
+              <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink-500">
+                Moonshadow Headquarters · refreshing live evidence…
+              </span>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <span
+                  className="font-mono text-[10px] uppercase tracking-[0.3em] text-blood-300"
+                  title={evidenceError ?? undefined}
+                >
+                  Moonshadow Headquarters · live evidence unavailable
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void load()}
+                  className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400 hover:text-blood-300"
+                >
+                  Retry evidence
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => navigate({ name: 'hq-command' })}
-            className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400 hover:text-blood-300"
+            className="shrink-0 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400 hover:text-blood-300"
           >
             Command Center
           </button>
