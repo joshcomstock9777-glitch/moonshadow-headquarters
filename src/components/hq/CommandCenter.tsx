@@ -11,6 +11,9 @@ import {
 } from '../../lib/hq'
 import { navigate } from '../../lib/router'
 
+type EvidenceSource = 'jobs' | 'approvals' | 'activity' | 'projects' | 'connections'
+type EvidenceErrors = Partial<Record<EvidenceSource, string>>
+
 export default function CommandCenter() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [approvals, setApprovals] = useState<Approval[]>([])
@@ -18,10 +21,12 @@ export default function CommandCenter() {
   const [projects, setProjects] = useState<Project[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
-  const [connectionLoadError, setConnectionLoadError] = useState<string | null>(null)
+  const [evidenceErrors, setEvidenceErrors] = useState<EvidenceErrors>({})
 
   const load = useCallback(async () => {
     setLoading(true)
+    setEvidenceErrors({})
+
     const [j, a, act, p, c] = await Promise.all([
       supabase
         .from('jobs')
@@ -48,12 +53,20 @@ export default function CommandCenter() {
         .select('*')
         .order('name', { ascending: true }),
     ])
-    setJobs(j.data ?? [])
-    setApprovals(a.data ?? [])
-    setActivity(act.data ?? [])
-    setProjects(p.data ?? [])
-    setConnections(c.data ?? [])
-    setConnectionLoadError(c.error?.message ?? null)
+
+    const nextErrors: EvidenceErrors = {}
+    if (j.error) nextErrors.jobs = j.error.message
+    if (a.error) nextErrors.approvals = a.error.message
+    if (act.error) nextErrors.activity = act.error.message
+    if (p.error) nextErrors.projects = p.error.message
+    if (c.error) nextErrors.connections = c.error.message
+
+    setJobs(j.error ? [] : (j.data ?? []))
+    setApprovals(a.error ? [] : (a.data ?? []))
+    setActivity(act.error ? [] : (act.data ?? []))
+    setProjects(p.error ? [] : (p.data ?? []))
+    setConnections(c.error ? [] : (c.data ?? []))
+    setEvidenceErrors(nextErrors)
     setLoading(false)
   }, [])
 
@@ -64,6 +77,7 @@ export default function CommandCenter() {
   const connectedCount = connections.filter((connection) => connection.status === 'connected').length
   const blocked = jobs.filter((j) => j.error)
   const waitingApprovals = approvals.length
+  const failedSources = Object.keys(evidenceErrors) as EvidenceSource[]
 
   return (
     <div className="space-y-8">
@@ -81,28 +95,50 @@ export default function CommandCenter() {
         </p>
       </div>
 
+      {!loading && failedSources.length > 0 && (
+        <div className="rounded-xl border border-blood-700/50 bg-blood-700/5 p-4" role="alert">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-blood-300">
+                Live evidence incomplete
+              </p>
+              <p className="mt-1 text-sm text-ink-300">
+                Headquarters could not verify: {failedSources.join(', ')}. Failed reads are shown as unavailable, not zero.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="shrink-0 font-mono text-[10px] uppercase tracking-[0.2em] text-blood-300 hover:text-blood-200"
+            >
+              Retry evidence
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Active jobs"
-          value={jobs.filter((j) => j.stage !== 'done').length}
+          value={evidenceErrors.jobs ? 'Unknown' : jobs.filter((j) => j.stage !== 'done').length}
           accent="text-toxic-400"
           onClick={() => navigate({ name: 'hq-projects' })}
         />
         <StatCard
           label="Waiting approvals"
-          value={waitingApprovals}
+          value={evidenceErrors.approvals ? 'Unknown' : waitingApprovals}
           accent="text-amber-400"
           onClick={() => navigate({ name: 'hq-publish' })}
         />
         <StatCard
           label="Blocked"
-          value={blocked.length}
+          value={evidenceErrors.jobs ? 'Unknown' : blocked.length}
           accent="text-blood-400"
           onClick={() => navigate({ name: 'hq-projects' })}
         />
         <StatCard
           label="Verified connections"
-          value={connectionLoadError ? 'Unknown' : `${connectedCount}/${connections.length}`}
+          value={evidenceErrors.connections ? 'Unknown' : `${connectedCount}/${connections.length}`}
           accent="text-ink-200"
           onClick={() => navigate({ name: 'hq-tools' })}
         />
@@ -142,6 +178,8 @@ export default function CommandCenter() {
           </div>
           {loading ? (
             <p className="mt-4 text-ink-400">Loading…</p>
+          ) : evidenceErrors.jobs ? (
+            <EvidenceUnavailable source="jobs" error={evidenceErrors.jobs} />
           ) : jobs.length === 0 ? (
             <div className="mt-4 rounded-lg border border-dashed border-ink-700 p-8 text-center text-sm text-ink-400">
               No jobs yet. Start one with "New Job" above.
@@ -164,7 +202,9 @@ export default function CommandCenter() {
                           {job.title}
                         </p>
                         <p className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
-                          {proj?.title ?? 'No project'} · {timeAgo(job.updated_at)}
+                          {evidenceErrors.projects
+                            ? 'Project evidence unavailable'
+                            : (proj?.title ?? 'No project')} · {timeAgo(job.updated_at)}
                         </p>
                       </div>
                       <div className="flex flex-none items-center gap-2">
@@ -191,7 +231,11 @@ export default function CommandCenter() {
           <h2 className="font-display text-xl font-semibold text-ink-100">
             Waiting approvals
           </h2>
-          {approvals.length === 0 ? (
+          {loading ? (
+            <p className="mt-4 text-ink-400">Loading…</p>
+          ) : evidenceErrors.approvals ? (
+            <EvidenceUnavailable source="approvals" error={evidenceErrors.approvals} />
+          ) : approvals.length === 0 ? (
             <p className="mt-4 text-sm text-ink-400">
               Nothing waiting. The system won't publish, spend, or destroy
               without your say-so.
@@ -221,7 +265,11 @@ export default function CommandCenter() {
         <h2 className="font-display text-xl font-semibold text-ink-100">
           System activity
         </h2>
-        {activity.length === 0 ? (
+        {loading ? (
+          <p className="mt-4 text-ink-400">Loading…</p>
+        ) : evidenceErrors.activity ? (
+          <EvidenceUnavailable source="activity" error={evidenceErrors.activity} />
+        ) : activity.length === 0 ? (
           <p className="mt-4 text-sm text-ink-400">
             Every important action shows up here. Nothing happens quietly.
           </p>
@@ -273,10 +321,10 @@ export default function CommandCenter() {
           </button>
         </div>
 
-        {connectionLoadError ? (
-          <div className="mt-4 rounded-lg border border-blood-700/40 bg-blood-700/5 p-4 text-sm text-blood-300">
-            Connection evidence unavailable: {connectionLoadError}
-          </div>
+        {loading ? (
+          <p className="mt-4 text-ink-400">Loading…</p>
+        ) : evidenceErrors.connections ? (
+          <EvidenceUnavailable source="connections" error={evidenceErrors.connections} />
         ) : connections.length === 0 ? (
           <div className="mt-4 rounded-lg border border-dashed border-ink-700 p-6 text-sm text-ink-400">
             No connection records are available. Headquarters will not infer a connected state.
@@ -307,6 +355,14 @@ export default function CommandCenter() {
           </div>
         )}
       </section>
+    </div>
+  )
+}
+
+function EvidenceUnavailable({ source, error }: { source: string; error: string }) {
+  return (
+    <div className="mt-4 rounded-lg border border-blood-700/40 bg-blood-700/5 p-4 text-sm text-blood-300" title={error}>
+      {source} evidence unavailable. Headquarters will not substitute an empty or successful state for this failed live read.
     </div>
   )
 }
