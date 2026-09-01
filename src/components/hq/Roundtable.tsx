@@ -8,6 +8,10 @@ import { requestRoundtableReply } from '../../lib/pathRoundtable'
 const ADDRESS_TARGETS = ['everybody', ...ROLES] as const
 type AddressTarget = (typeof ADDRESS_TARGETS)[number]
 
+function pathTargetForRole(role: Role): 'allie' | 'amber' {
+  return role === 'watcher' ? 'amber' : 'allie'
+}
+
 export default function Roundtable({ projectId }: { projectId?: string }) {
   const [messages, setMessages] = useState<RoundtableMessage[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -26,9 +30,8 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
       .select('*')
       .order('created_at', { ascending: true })
       .limit(100)
-    if (selectedProject) {
-      query = query.eq('project_id', selectedProject)
-    }
+    if (selectedProject) query = query.eq('project_id', selectedProject)
+
     const [msgs, ps] = await Promise.all([
       query,
       supabase.from('projects').select('*').order('updated_at', { ascending: false }).limit(20),
@@ -43,9 +46,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
   }, [load])
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [messages])
 
   async function send(e: React.FormEvent) {
@@ -96,6 +97,9 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
           addressed_to: 'creator',
           kind: 'message',
           proposed_action: null,
+          path_session_id: response.sessionId,
+          path_correlation_id: response.correlationId,
+          path_target: pathTargetForRole(role),
         })
         if (insertError) throw insertError
 
@@ -106,7 +110,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
             ROLE_META[role].name,
             'responded through Moonshadow Path',
             'success',
-            `Path session ${response.sessionId.slice(0, 12)}…`,
+            `Path session ${response.sessionId.slice(0, 12)}… · correlation ${response.correlationId.slice(0, 12)}…`,
           )
         }
         void load()
@@ -124,13 +128,8 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="section-eyebrow">
-            <span className="h-px w-8 bg-blood-700" /> Roundtable
-          </p>
-          <h1 className="section-title">
-            The room where the work
-            <span className="italic text-blood-500"> gets shaped.</span>
-          </h1>
+          <p className="section-eyebrow"><span className="h-px w-8 bg-blood-700" /> Roundtable</p>
+          <h1 className="section-title">The room where the work <span className="italic text-blood-500">gets shaped.</span></h1>
         </div>
         <div className="flex items-center gap-3">
           <select
@@ -142,9 +141,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
             className="field-select !w-auto !py-2 !text-xs"
           >
             <option value="">All projects</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.title}</option>
-            ))}
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
           </select>
         </div>
       </div>
@@ -200,9 +197,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
                   key={t}
                   type="button"
                   onClick={() => setAddressTo(t)}
-                  className={`rounded-full px-3 py-1 font-mono text-[10px] uppercase tracking-[0.15em] transition-all ${
-                    addressTo === t ? 'bg-blood-700/20 text-blood-300' : 'text-ink-400 hover:text-ink-200'
-                  }`}
+                  className={`rounded-full px-3 py-1 font-mono text-[10px] uppercase tracking-[0.15em] transition-all ${addressTo === t ? 'bg-blood-700/20 text-blood-300' : 'text-ink-400 hover:text-ink-200'}`}
                 >
                   {t === 'everybody' ? 'Everybody' : ROLE_META[t as Role]?.name ?? t}
                 </button>
@@ -259,16 +254,13 @@ function MessageBubble({ msg }: { msg: RoundtableMessage }) {
           )}
           <span className="font-mono text-[9px] text-ink-600">{timeAgo(msg.created_at)}</span>
         </div>
-        <div
-          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-            isCreator
-              ? 'rounded-tr-sm border border-blood-700/40 bg-blood-700/10 text-ink-100'
-              : msg.kind === 'proposal'
-                ? 'rounded-tl-sm border border-amber-700/40 bg-amber-700/5 text-ink-100'
-                : 'rounded-tl-sm border border-ink-700 bg-ink-900/40 text-ink-200'
-          }`}
-        >
+        <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${isCreator ? 'rounded-tr-sm border border-blood-700/40 bg-blood-700/10 text-ink-100' : msg.kind === 'proposal' ? 'rounded-tl-sm border border-amber-700/40 bg-amber-700/5 text-ink-100' : 'rounded-tl-sm border border-ink-700 bg-ink-900/40 text-ink-200'}`}>
           {msg.message}
+          {msg.path_session_id && msg.path_correlation_id && (
+            <div className="mt-3 border-t border-ink-800 pt-2 font-mono text-[9px] uppercase tracking-[0.15em] text-ink-600">
+              Path evidence · target {msg.path_target ?? 'unknown'} · session {msg.path_session_id.slice(0, 12)}… · correlation {msg.path_correlation_id.slice(0, 12)}…
+            </div>
+          )}
           {msg.kind === 'proposal' && msg.proposed_action && (
             <div className="mt-3 rounded-lg border border-amber-700/40 bg-amber-700/10 px-3 py-2">
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-amber-300">Proposed action</p>
