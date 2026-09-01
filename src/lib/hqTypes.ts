@@ -73,6 +73,8 @@ export interface RoundtableMessage {
   path_session_id: string | null
   path_correlation_id: string | null
   path_target: string | null
+  path_evidence_verified: boolean
+  path_evidence_verified_at: string | null
   created_at: string
 }
 
