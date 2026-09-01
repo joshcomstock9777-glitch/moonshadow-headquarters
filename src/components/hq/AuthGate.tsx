@@ -21,16 +21,68 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true
 
-    supabase.auth.getSession().then(({ data, error: sessionError }) => {
+    async function verifyStoredSession() {
+      const { data, error: sessionError } = await supabase.auth.getSession()
       if (!active) return
-      if (sessionError) setError(sessionError.message)
-      setSession(data.session)
-      setLoading(false)
-    })
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (sessionError) {
+        setSession(null)
+        setError(`Headquarters session check failed: ${sessionError.message}`)
+        setLoading(false)
+        return
+      }
+
+      if (!data.session) {
+        setSession(null)
+        setLoading(false)
+        return
+      }
+
+      // getSession() can be satisfied from local browser storage. Before exposing
+      // Headquarters, validate that stored token against Supabase Auth and use the
+      // server-returned user/app_metadata as the authorization source of truth.
+      const { data: userData, error: userError } = await supabase.auth.getUser()
       if (!active) return
+
+      if (userError || !userData.user) {
+        setSession(null)
+        setError(
+          userError
+            ? `Headquarters session could not be verified: ${userError.message}`
+            : 'Headquarters session could not be verified by Supabase Auth.',
+        )
+        setLoading(false)
+        return
+      }
+
+      if (userData.user.id !== data.session.user.id) {
+        setSession(null)
+        setError('Headquarters session identity verification failed.')
+        setLoading(false)
+        return
+      }
+
+      setSession({ ...data.session, user: userData.user })
+      setError(null)
+      setLoading(false)
+    }
+
+    void verifyStoredSession()
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!active) return
+
+      // SIGNED_IN and TOKEN_REFRESHED are server-backed auth events. Sign-in uses
+      // signInWithPassword below; refreshes are issued by Supabase Auth. Initial
+      // browser-restored state is separately verified by verifyStoredSession().
+      if (event === 'SIGNED_OUT' || !nextSession) {
+        setSession(null)
+        setLoading(false)
+        return
+      }
+
       setSession(nextSession)
+      setError(null)
       setLoading(false)
     })
 
@@ -45,8 +97,24 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     setSubmitting(true)
     setError(null)
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-    if (signInError) setError(signInError.message)
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    if (signInError) {
+      setError(signInError.message)
+      setSubmitting(false)
+      return
+    }
+
+    if (!data.session) {
+      setError('Supabase authenticated the request but did not return a Headquarters session.')
+      setSubmitting(false)
+      return
+    }
+
+    // signInWithPassword is a server round trip, so this session is already
+    // server-issued. Authorization still fails closed below unless app_metadata
+    // contains an accepted Headquarters role.
+    setSession(data.session)
+    setPassword('')
     setSubmitting(false)
   }
 
