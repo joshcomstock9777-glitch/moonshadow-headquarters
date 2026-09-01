@@ -15,18 +15,34 @@ export default function AssetLibrary() {
   const [assets, setAssets] = useState<Asset[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
+  const [assetsError, setAssetsError] = useState<string | null>(null)
+  const [projectsError, setProjectsError] = useState<string | null>(null)
   const [filterKind, setFilterKind] = useState<'all' | AssetKind>('all')
   const [filterProject, setFilterProject] = useState<'all' | string>('all')
   const [showAdd, setShowAdd] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setAssetsError(null)
+    setProjectsError(null)
+
     const [a, p] = await Promise.all([
       supabase.from('assets').select('*').order('created_at', { ascending: false }),
       supabase.from('projects').select('*').order('updated_at', { ascending: false }),
     ])
-    setAssets(a.data ?? [])
-    setProjects(p.data ?? [])
+
+    if (a.error) {
+      setAssetsError(a.error.message)
+    } else {
+      setAssets(a.data ?? [])
+    }
+
+    if (p.error) {
+      setProjectsError(p.error.message)
+    } else {
+      setProjects(p.data ?? [])
+    }
+
     setLoading(false)
   }, [])
 
@@ -41,6 +57,7 @@ export default function AssetLibrary() {
   )
 
   const projectMap = new Map(projects.map((p) => [p.id, p.title]))
+  const liveEvidenceUnavailable = Boolean(assetsError || projectsError)
 
   return (
     <div className="space-y-8">
@@ -61,12 +78,33 @@ export default function AssetLibrary() {
         <button
           onClick={() => setShowAdd(true)}
           className="btn-primary"
+          disabled={Boolean(projectsError)}
+          title={projectsError ? 'Project evidence is unavailable. Retry before adding project-linked assets.' : undefined}
         >
           Add Asset
         </button>
       </div>
 
-      {/* Stats */}
+      {liveEvidenceUnavailable && (
+        <div className="card border-blood-700/60 bg-blood-900/20 p-4" role="alert">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-blood-300">
+                Live evidence unavailable
+              </p>
+              <p className="mt-2 text-sm text-ink-300">
+                Headquarters could not verify all Asset Library data. Existing rows are preserved, but missing evidence is not being treated as an empty library.
+              </p>
+              {assetsError && <p className="mt-2 text-xs text-blood-300">Assets: {assetsError}</p>}
+              {projectsError && <p className="mt-1 text-xs text-blood-300">Projects: {projectsError}</p>}
+            </div>
+            <button type="button" onClick={() => void load()} className="btn-ghost" disabled={loading}>
+              {loading ? 'Refreshing…' : 'Retry evidence'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-4">
         {ASSET_KINDS.map((kind) => {
           const count = assets.filter((a) => a.kind === kind).length
@@ -77,7 +115,7 @@ export default function AssetLibrary() {
                   {ASSET_KIND_GLYPHS[kind]}
                 </span>
                 <span className="font-display text-2xl font-semibold text-ink-100">
-                  {count}
+                  {assetsError ? '—' : count}
                 </span>
               </div>
               <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
@@ -88,12 +126,12 @@ export default function AssetLibrary() {
         })}
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <select
           value={filterKind}
           onChange={(e) => setFilterKind(e.target.value as 'all' | AssetKind)}
           className="field-select !w-auto !py-2 !text-xs"
+          disabled={Boolean(assetsError)}
         >
           <option value="all">All kinds</option>
           {ASSET_KINDS.map((k) => (
@@ -106,6 +144,7 @@ export default function AssetLibrary() {
           value={filterProject}
           onChange={(e) => setFilterProject(e.target.value)}
           className="field-select !w-auto !py-2 !text-xs"
+          disabled={Boolean(projectsError)}
         >
           <option value="all">All projects</option>
           {projects.map((p) => (
@@ -116,9 +155,12 @@ export default function AssetLibrary() {
         </select>
       </div>
 
-      {/* Assets grid */}
       {loading ? (
         <p className="text-ink-400">Loading…</p>
+      ) : assetsError ? (
+        <div className="card p-12 text-center text-ink-400">
+          Asset rows cannot be verified right now. Retry the live evidence read above.
+        </div>
       ) : filtered.length === 0 ? (
         <div className="card p-12 text-center text-ink-400">
           No assets yet. Add one, or generate one from a project.
@@ -135,7 +177,7 @@ export default function AssetLibrary() {
         </div>
       )}
 
-      {showAdd && (
+      {showAdd && !projectsError && (
         <AddAssetModal
           projects={projects}
           onClose={() => setShowAdd(false)}
