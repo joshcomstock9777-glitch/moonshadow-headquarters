@@ -17,6 +17,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<string | null>(projectId ?? null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [addressTo, setAddressTo] = useState<AddressTarget>('everybody')
   const [sending, setSending] = useState(false)
@@ -25,6 +26,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError(null)
     let query = supabase
       .from('roundtable_messages')
       .select('*')
@@ -36,8 +38,14 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
       query,
       supabase.from('projects').select('*').order('updated_at', { ascending: false }).limit(20),
     ])
-    setMessages(msgs.data ?? [])
-    setProjects(ps.data ?? [])
+
+    const failures: string[] = []
+    if (msgs.error) failures.push(`messages: ${msgs.error.message}`)
+    if (ps.error) failures.push(`projects: ${ps.error.message}`)
+
+    if (!msgs.error) setMessages(msgs.data ?? [])
+    if (!ps.error) setProjects(ps.data ?? [])
+    if (failures.length) setLoadError(failures.join(' · '))
     setLoading(false)
   }, [selectedProject])
 
@@ -139,6 +147,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
               if (e.target.value) navigate({ name: 'hq-roundtable', projectId: e.target.value })
             }}
             className="field-select !w-auto !py-2 !text-xs"
+            disabled={!!loadError && projects.length === 0}
           >
             <option value="">All projects</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
@@ -163,10 +172,24 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
         })}
       </div>
 
+      {loadError && (
+        <div className="rounded-xl border border-blood-700/50 bg-blood-900/10 px-4 py-3 text-sm text-blood-300">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>Roundtable live evidence unavailable: {loadError}</span>
+            <button type="button" onClick={() => void load()} className="btn-secondary !px-3 !py-1.5 !text-[10px]">Retry evidence</button>
+          </div>
+        </div>
+      )}
+
       <div className="card flex h-[55vh] flex-col overflow-hidden">
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-6">
           {loading ? (
             <p className="text-ink-400">Loading…</p>
+          ) : loadError && messages.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center text-center">
+              <p className="text-blood-300">Roundtable messages could not be verified from Supabase.</p>
+              <p className="mt-2 text-sm text-ink-500">No empty-room status is being inferred while live evidence is unavailable.</p>
+            </div>
           ) : messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
               <p className="text-ink-300">The Roundtable is quiet. Say something to get it started.</p>
