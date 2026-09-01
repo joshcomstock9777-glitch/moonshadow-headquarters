@@ -4,36 +4,36 @@ import type { Job, Project } from '../../lib/hqTypes'
 import { STAGE_LABELS, stageColor, timeAgo } from '../../lib/hq'
 import { navigate } from '../../lib/router'
 
-// Content Factory: production jobs organized into configurable lanes/channels.
-// Lanes are configurable, not hard-coded — stored in localStorage.
 const DEFAULT_LANES = ['Short Film', 'Story', 'Channel Piece', 'Social Clip']
 
 export default function ContentFactory() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [projects, setProjects] = useState<Project[]>([])
-  const [lanes, setLanes] = useState<string[]>(DEFAULT_LANES)
+  const [lanes, setLanes] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [laneError, setLaneError] = useState<string | null>(null)
   const [showLaneConfig, setShowLaneConfig] = useState(false)
-
-  useEffect(() => {
-    const saved = localStorage.getItem('hq-lanes')
-    if (saved) {
-      try {
-        setLanes(JSON.parse(saved))
-      } catch {
-        // keep defaults
-      }
-    }
-  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [j, p] = await Promise.all([
+    setLaneError(null)
+
+    const [j, p, l] = await Promise.all([
       supabase.from('jobs').select('*').order('updated_at', { ascending: false }),
       supabase.from('projects').select('*').order('updated_at', { ascending: false }),
+      supabase.from('factory_lanes').select('name, position').order('position', { ascending: true }),
     ])
+
     setJobs(j.data ?? [])
     setProjects(p.data ?? [])
+
+    if (l.error) {
+      setLanes([])
+      setLaneError(`Factory lane data unavailable: ${l.error.message}`)
+    } else {
+      setLanes((l.data ?? []).map((row) => row.name))
+    }
+
     setLoading(false)
   }, [])
 
@@ -41,9 +41,26 @@ export default function ContentFactory() {
     void load()
   }, [load])
 
-  function saveLanes(newLanes: string[]) {
-    setLanes(newLanes)
-    localStorage.setItem('hq-lanes', JSON.stringify(newLanes))
+  async function saveLanes(newLanes: string[]) {
+    setLaneError(null)
+    const normalized = [...new Set(newLanes.map((lane) => lane.trim()).filter(Boolean))]
+
+    if (normalized.length === 0) {
+      setLaneError('At least one factory lane is required.')
+      return false
+    }
+
+    const { error } = await supabase.rpc('replace_factory_lanes', {
+      lane_names: normalized,
+    })
+
+    if (error) {
+      setLaneError(`Factory lane save failed: ${error.message}`)
+      return false
+    }
+
+    setLanes(normalized)
+    return true
   }
 
   const projectMap = new Map(projects.map((p) => [p.id, p]))
@@ -60,7 +77,7 @@ export default function ContentFactory() {
             <span className="italic text-blood-500"> lane.</span>
           </h1>
           <p className="mt-4 max-w-2xl text-ink-300">
-            Repeatable short-form content organized into configurable lanes.
+            Repeatable short-form content organized into shared Headquarters lanes.
             See exactly where each piece is in production.
           </p>
         </div>
@@ -68,6 +85,7 @@ export default function ContentFactory() {
           <button
             onClick={() => setShowLaneConfig(true)}
             className="btn-ghost !text-xs"
+            disabled={lanes.length === 0}
           >
             Configure Lanes
           </button>
@@ -80,7 +98,12 @@ export default function ContentFactory() {
         </div>
       </div>
 
-      {/* Pipeline legend */}
+      {laneError && (
+        <div className="rounded-lg border border-blood-700/50 bg-blood-700/10 p-4 text-sm text-blood-300">
+          {laneError}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
           Pipeline:
@@ -95,9 +118,12 @@ export default function ContentFactory() {
         ))}
       </div>
 
-      {/* Lanes as columns */}
       {loading ? (
         <p className="text-ink-400">Loading…</p>
+      ) : lanes.length === 0 ? (
+        <div className="card p-12 text-center text-ink-400">
+          Factory lanes are unavailable. Apply the Headquarters data migration and reload.
+        </div>
       ) : jobs.length === 0 ? (
         <div className="card p-12 text-center text-ink-400">
           No production jobs yet. Create one to start the factory.
@@ -107,7 +133,7 @@ export default function ContentFactory() {
           {lanes.map((lane) => {
             const laneJobs = jobs.filter((j) => {
               const proj = j.project_id ? projectMap.get(j.project_id) ?? null : null
-              return proj?.type === laneToType(lane) || laneMatch(lane, proj ?? undefined, j)
+              return proj?.type === laneToType(lane) || laneMatch(lane, proj ?? undefined)
             })
             return (
               <div key={lane} className="space-y-3">
@@ -191,7 +217,7 @@ function laneToType(lane: string): string {
   return map[lane] ?? ''
 }
 
-function laneMatch(lane: string, project: Project | undefined, job: Job): boolean {
+function laneMatch(lane: string, project: Project | undefined): boolean {
   if (!project) return false
   const type = project.type ?? ''
   return laneToType(lane) === type
@@ -203,11 +229,12 @@ function LaneConfigModal({
   onClose,
 }: {
   lanes: string[]
-  onSave: (l: string[]) => void
+  onSave: (l: string[]) => Promise<boolean>
   onClose: () => void
 }) {
   const [local, setLocal] = useState(lanes)
   const [newLane, setNewLane] = useState('')
+  const [saving, setSaving] = useState(false)
 
   return (
     <div
@@ -222,15 +249,16 @@ function LaneConfigModal({
           Configure lanes
         </h2>
         <p className="mt-2 text-sm text-ink-400">
-          Lanes are saved locally. They organize jobs by type.
+          Lanes are stored in the authenticated Headquarters data plane.
         </p>
         <ul className="mt-4 space-y-2">
           {local.map((lane, i) => (
-            <li key={i} className="flex items-center gap-2">
+            <li key={`${lane}-${i}`} className="flex items-center gap-2">
               <span className="flex-1 text-sm text-ink-100">{lane}</span>
               <button
                 onClick={() => setLocal(local.filter((_, idx) => idx !== i))}
                 className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500 hover:text-blood-400"
+                disabled={saving}
               >
                 Remove
               </button>
@@ -243,34 +271,42 @@ function LaneConfigModal({
             onChange={(e) => setNewLane(e.target.value)}
             className="field-input flex-1"
             placeholder="New lane name"
+            disabled={saving}
           />
           <button
             onClick={() => {
-              if (newLane.trim()) {
-                setLocal([...local, newLane.trim()])
+              const candidate = newLane.trim()
+              if (candidate && !local.includes(candidate)) {
+                setLocal([...local, candidate])
                 setNewLane('')
               }
             }}
             className="btn-ghost !text-xs"
+            disabled={saving}
           >
             Add
           </button>
         </div>
         <div className="mt-6 flex justify-end gap-3">
-          <button onClick={onClose} className="btn-ghost">
+          <button onClick={onClose} className="btn-ghost" disabled={saving}>
             Cancel
           </button>
           <button
-            onClick={() => {
-              onSave(local)
-              onClose()
+            onClick={async () => {
+              setSaving(true)
+              const saved = await onSave(local)
+              setSaving(false)
+              if (saved) onClose()
             }}
             className="btn-primary"
+            disabled={saving}
           >
-            Save
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
     </div>
   )
 }
+
+export { DEFAULT_LANES }
