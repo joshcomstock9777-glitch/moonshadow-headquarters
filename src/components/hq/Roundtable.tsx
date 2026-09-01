@@ -108,6 +108,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
           path_session_id: response.sessionId,
           path_correlation_id: response.correlationId,
           path_target: pathTargetForRole(role),
+          path_evidence_verified: false,
         })
         if (insertError) throw insertError
 
@@ -280,8 +281,8 @@ function MessageBubble({ msg }: { msg: RoundtableMessage }) {
         <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${isCreator ? 'rounded-tr-sm border border-blood-700/40 bg-blood-700/10 text-ink-100' : msg.kind === 'proposal' ? 'rounded-tl-sm border border-amber-700/40 bg-amber-700/5 text-ink-100' : 'rounded-tl-sm border border-ink-700 bg-ink-900/40 text-ink-200'}`}>
           {msg.message}
           {msg.path_session_id && msg.path_correlation_id && (
-            <div className="mt-3 border-t border-ink-800 pt-2 font-mono text-[9px] uppercase tracking-[0.15em] text-ink-600">
-              Path evidence · target {msg.path_target ?? 'unknown'} · session {msg.path_session_id.slice(0, 12)}… · correlation {msg.path_correlation_id.slice(0, 12)}…
+            <div className={`mt-3 border-t border-ink-800 pt-2 font-mono text-[9px] uppercase tracking-[0.15em] ${msg.path_evidence_verified ? 'text-toxic-300' : 'text-amber-300'}`}>
+              {msg.path_evidence_verified ? 'Verified Path evidence' : 'Path response recorded · backend verification pending'} · target {msg.path_target ?? 'unknown'} · session {msg.path_session_id.slice(0, 12)}… · correlation {msg.path_correlation_id.slice(0, 12)}…
             </div>
           )}
           {msg.kind === 'proposal' && msg.proposed_action && (
