@@ -8,6 +8,7 @@ import {
   logActivity,
 } from '../../lib/hq'
 import { navigate } from '../../lib/router'
+import { requestRoundtableReply } from '../../lib/pathRoundtable'
 
 const TONES = [
   'Slow-building dread',
@@ -19,6 +20,16 @@ const TONES = [
 
 const PLATFORMS = ['YouTube', 'Instagram', 'TikTok', 'X', 'Internal', 'Other']
 
+type CreateResult = {
+  project: Project
+  job: Job
+  kickoff: {
+    sessionId: string
+    correlationId: string
+  } | null
+  kickoffError: string | null
+}
+
 export default function CreateFlow() {
   const [idea, setIdea] = useState('')
   const [type, setType] = useState('short-film')
@@ -28,7 +39,7 @@ export default function CreateFlow() {
   const [title, setTitle] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
-  const [result, setResult] = useState<{ project: Project; job: Job } | null>(null)
+  const [result, setResult] = useState<CreateResult | null>(null)
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -36,14 +47,15 @@ export default function CreateFlow() {
     setCreating(true)
     setError('')
 
-    const projectTitle = title.trim() || idea.trim().slice(0, 60)
+    const creatorBrief = idea.trim()
+    const projectTitle = title.trim() || creatorBrief.slice(0, 60)
 
     try {
       const { data: projData, error: projErr } = await supabase
         .from('projects')
         .insert({
           title: projectTitle,
-          goal: idea.trim(),
+          goal: creatorBrief,
           status: 'active',
           type,
           tone: tone || null,
@@ -61,23 +73,115 @@ export default function CreateFlow() {
           title: projectTitle,
           kind: 'production',
           stage: 'idea',
-          brief: idea.trim(),
+          brief: creatorBrief,
         })
         .select()
         .single()
       if (jobErr) throw jobErr
 
-      await Promise.all([
-        logActivity(projData.id, jobData.id, 'Herman', 'created project and production job', 'create', projectTitle),
-        logActivity(projData.id, jobData.id, 'Allie', 'received the brief — planning next', 'info'),
-        logActivity(projData.id, jobData.id, 'Herman', `routed job to stage: ${STAGES[0]}`, 'system'),
-      ])
-
-      setResult({ project: projData, job: jobData })
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to create the job.',
+      await logActivity(
+        projData.id,
+        jobData.id,
+        'Creator',
+        'created project and production job',
+        'create',
+        projectTitle,
       )
+
+      const { error: creatorMessageError } = await supabase
+        .from('roundtable_messages')
+        .insert({
+          project_id: projData.id,
+          role: 'creator',
+          message: creatorBrief,
+          addressed_to: 'herman',
+          kind: 'message',
+        })
+      if (creatorMessageError) {
+        setResult({
+          project: projData,
+          job: jobData,
+          kickoff: null,
+          kickoffError: `Job created, but the Roundtable brief could not be persisted: ${creatorMessageError.message}`,
+        })
+        return
+      }
+
+      try {
+        const response = await requestRoundtableReply('herman', creatorBrief)
+        const { error: replyInsertError } = await supabase
+          .from('roundtable_messages')
+          .insert({
+            project_id: projData.id,
+            role: 'herman',
+            message: response.message,
+            addressed_to: 'creator',
+            kind: 'message',
+            proposed_action: null,
+            path_session_id: response.sessionId,
+            path_correlation_id: response.correlationId,
+            path_target: 'allie',
+          })
+        if (replyInsertError) throw replyInsertError
+
+        const { data: advancedJob, error: advanceError } = await supabase
+          .from('jobs')
+          .update({ stage: 'plan' })
+          .eq('id', jobData.id)
+          .select()
+          .single()
+        if (advanceError) throw advanceError
+
+        await Promise.all([
+          logActivity(
+            projData.id,
+            jobData.id,
+            'Herman',
+            'responded through Moonshadow Path',
+            'success',
+            `Path session ${response.sessionId.slice(0, 12)}… · correlation ${response.correlationId.slice(0, 12)}…`,
+          ),
+          logActivity(
+            projData.id,
+            jobData.id,
+            'Herman',
+            `advanced job to stage: ${STAGES[1]}`,
+            'system',
+          ),
+        ])
+
+        setResult({
+          project: projData,
+          job: advancedJob,
+          kickoff: {
+            sessionId: response.sessionId,
+            correlationId: response.correlationId,
+          },
+          kickoffError: null,
+        })
+      } catch (kickoffErr) {
+        const kickoffMessage = kickoffErr instanceof Error
+          ? kickoffErr.message
+          : 'Moonshadow Path kickoff failed'
+
+        await logActivity(
+          projData.id,
+          jobData.id,
+          'Herman',
+          'Moonshadow Path kickoff failed; job remains at idea stage',
+          'error',
+          kickoffMessage.slice(0, 120),
+        )
+
+        setResult({
+          project: projData,
+          job: jobData,
+          kickoff: null,
+          kickoffError: kickoffMessage,
+        })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create the job.')
     } finally {
       setCreating(false)
     }
@@ -94,8 +198,9 @@ export default function CreateFlow() {
             Job created.
           </h1>
           <p className="mt-3 text-ink-300">
-            Herman has the brief. The Roundtable can discuss it, and the job
-            pipeline is live.
+            {result.kickoff
+              ? 'Herman received the brief through Moonshadow Path and advanced the job to planning.'
+              : 'The project and job are durable, but automatic Moonshadow Path kickoff did not complete.'}
           </p>
         </div>
 
@@ -116,8 +221,25 @@ export default function CreateFlow() {
             <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
               Stage
             </p>
-            <p className="mt-1 text-lg text-toxic-300">Idea → Plan</p>
+            <p className="mt-1 text-lg text-toxic-300">
+              {result.kickoff ? 'Plan' : 'Idea'}
+            </p>
           </div>
+          {result.kickoff && (
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
+                Path evidence
+              </p>
+              <p className="mt-1 break-all font-mono text-xs text-ink-300">
+                session {result.kickoff.sessionId} · correlation {result.kickoff.correlationId}
+              </p>
+            </div>
+          )}
+          {result.kickoffError && (
+            <div className="rounded-lg border border-amber-700/50 bg-amber-900/10 px-4 py-3 text-sm text-amber-300">
+              Kickoff not verified: {result.kickoffError}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
@@ -149,8 +271,7 @@ export default function CreateFlow() {
           <span className="italic text-blood-500"> idea.</span>
         </h1>
         <p className="mt-4 text-ink-300">
-          Headquarters will create a project and a production job from it.
-          Herman takes it from there.
+          Headquarters will create a durable project and production job, then ask Herman to kick it off through Moonshadow Path.
         </p>
       </div>
 
