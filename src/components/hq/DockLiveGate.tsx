@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import Dock from './Dock'
+import DockHandoffRetryPanel from './DockHandoffRetryPanel'
 
 type GateState = 'checking' | 'ready' | 'unavailable'
 
@@ -76,5 +77,10 @@ export default function DockLiveGate() {
     )
   }
 
-  return <Dock />
+  return (
+    <div className="space-y-6">
+      <DockHandoffRetryPanel />
+      <Dock />
+    </div>
+  )
 }
