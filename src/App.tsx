@@ -20,7 +20,7 @@ import AssetLibrary from './components/hq/AssetLibrary'
 import ContentFactory from './components/hq/ContentFactory'
 import PublishingCenterVerified from './components/hq/PublishingCenterVerified'
 import ToolsConnections from './components/hq/ToolsConnections'
-import Dock from './components/hq/Dock'
+import DockLiveGate from './components/hq/DockLiveGate'
 import { useRoute, navigate } from './lib/router'
 
 export default function App() {
@@ -53,7 +53,7 @@ export default function App() {
             ) : route.name === 'hq-tools' ? (
               <ToolsConnections />
             ) : route.name === 'hq-dock' ? (
-              <Dock />
+              <DockLiveGate />
             ) : (
               <CommandCenter />
             )}
