@@ -72,11 +72,23 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return
 
-      // SIGNED_IN and TOKEN_REFRESHED are server-backed auth events. Sign-in uses
-      // signInWithPassword below; refreshes are issued by Supabase Auth. Initial
-      // browser-restored state is separately verified by verifyStoredSession().
+      // INITIAL_SESSION may be emitted from browser-restored storage before the
+      // server-backed getUser() verification above completes. Never expose HQ from
+      // that event. verifyStoredSession() owns initial-session authorization.
+      if (event === 'INITIAL_SESSION') return
+
       if (event === 'SIGNED_OUT' || !nextSession) {
         setSession(null)
+        setLoading(false)
+        return
+      }
+
+      // Only accept auth events that come from a completed Supabase Auth server
+      // interaction. Unknown/future event types fail closed instead of silently
+      // turning locally restored state into Headquarters authorization.
+      if (event !== 'SIGNED_IN' && event !== 'TOKEN_REFRESHED' && event !== 'USER_UPDATED') {
+        setSession(null)
+        setError(`Headquarters rejected unverified auth event: ${event}`)
         setLoading(false)
         return
       }
