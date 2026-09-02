@@ -33,6 +33,8 @@ type PathSession = {
   error?: string
 }
 
+type HqRole = 'owner' | 'operator'
+
 function requiredEnv(name: string): string {
   const value = Deno.env.get(name)?.trim()
   if (!value) throw new Error(`${name} is not configured`)
@@ -47,6 +49,17 @@ function pathSessionUrl(sessionId: string): string {
   const base = pathBaseUrl()
   const apiBase = base.endsWith('/api') ? base : `${base}/api`
   return `${apiBase}/sessions/${encodeURIComponent(sessionId)}`
+}
+
+function bearerToken(request: Request): string | null {
+  const authorization = request.headers.get('authorization')?.trim()
+  if (!authorization) return null
+  const match = authorization.match(/^Bearer\s+(.+)$/i)
+  return match?.[1]?.trim() || null
+}
+
+function hqRole(value: unknown): HqRole | null {
+  return value === 'owner' || value === 'operator' ? value : null
 }
 
 async function fetchPathSession(sessionId: string): Promise<PathSession> {
@@ -89,13 +102,26 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const body = (await request.json().catch(() => ({}))) as VerifyRequest
-    const messageId = body.messageId?.trim()
-    if (!messageId) return Response.json({ error: 'messageId is required' }, { status: 400 })
+    const token = bearerToken(request)
+    if (!token) return Response.json({ error: 'Authentication required' }, { status: 401 })
 
     const supabase = createClient(requiredEnv('SUPABASE_URL'), requiredEnv('SUPABASE_SERVICE_ROLE_KEY'), {
       auth: { persistSession: false, autoRefreshToken: false },
     })
+
+    const { data: callerData, error: callerError } = await supabase.auth.getUser(token)
+    const caller = callerData.user
+    if (callerError || !caller) {
+      return Response.json({ error: 'Invalid or expired Headquarters session' }, { status: 401 })
+    }
+
+    if (!hqRole(caller.app_metadata?.hq_role)) {
+      return Response.json({ error: 'Headquarters owner/operator role required' }, { status: 403 })
+    }
+
+    const body = (await request.json().catch(() => ({}))) as VerifyRequest
+    const messageId = body.messageId?.trim()
+    if (!messageId) return Response.json({ error: 'messageId is required' }, { status: 400 })
 
     const { data, error } = await supabase
       .from('roundtable_messages')
