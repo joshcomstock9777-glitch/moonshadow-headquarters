@@ -13,16 +13,18 @@ export default function DockLiveGate() {
     setState('checking')
     setFailedReads([])
 
+    // The adopted control-plane schema intentionally uses unprefixed names.
+    // A successful read proves both the live table and current RLS authorization.
     const [machines, handoffs, tests] = await Promise.all([
-      supabase.from('dock_machines').select('id').limit(1),
-      supabase.from('dock_handoffs').select('id').limit(1),
-      supabase.from('dock_connection_tests').select('id').limit(1),
+      supabase.from('machines').select('id').limit(1),
+      supabase.from('handoffs').select('id').limit(1),
+      supabase.from('commissioning_tests').select('id').limit(1),
     ])
 
     const failures = [
       machines.error ? 'machine registry' : null,
       handoffs.error ? 'handoff ledger' : null,
-      tests.error ? 'connection-test evidence' : null,
+      tests.error ? 'commissioning-test evidence' : null,
     ].filter((value): value is string => value !== null)
 
     if (failures.length > 0) {
