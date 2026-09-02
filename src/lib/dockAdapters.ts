@@ -5,6 +5,7 @@
 // protocol. New machines require a small adapter rather than changes
 // throughout Headquarters.
 
+import { supabase } from './supabase'
 import type {
   AdapterType,
   Capability,
@@ -48,15 +49,40 @@ async function timedFetch(
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(url, { ...options, signal: controller.signal })
-    const latencyMs = Math.round(performance.now() - start)
-    return { response, latencyMs }
+    return { response, latencyMs: Math.round(performance.now() - start) }
   } finally {
     clearTimeout(timer)
   }
 }
 
 function truncateBody(text: string, max = 10000): string {
-  return text.length > max ? text.slice(0, max) + '\n…[truncated]' : text
+  return text.length > max ? `${text.slice(0, max)}\n…[truncated]` : text
+}
+
+async function requestResult(
+  url: string,
+  options: RequestInit,
+  bodyLimit = 10000,
+): Promise<AdapterTestResult> {
+  try {
+    const { response, latencyMs } = await timedFetch(url, options)
+    const body = await response.text()
+    return {
+      success: response.ok,
+      httpStatus: response.status,
+      responseBody: truncateBody(body, bodyLimit),
+      latencyMs,
+      error: response.ok ? null : `HTTP ${response.status}`,
+    }
+  } catch (err) {
+    return {
+      success: false,
+      httpStatus: null,
+      responseBody: null,
+      latencyMs: null,
+      error: (err as Error).message,
+    }
+  }
 }
 
 const restAdapter: DockAdapter = {
@@ -66,44 +92,20 @@ const restAdapter: DockAdapter = {
     if (!machine.api_base_url) {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: 'No API base URL configured' }
     }
-    try {
-      const { response, latencyMs } = await timedFetch(machine.api_base_url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      const body = await response.text()
-      return {
-        success: response.ok,
-        httpStatus: response.status,
-        responseBody: truncateBody(body),
-        latencyMs,
-        error: response.ok ? null : `HTTP ${response.status}`,
-      }
-    } catch (err) {
-      return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: (err as Error).message }
-    }
+    return requestResult(machine.api_base_url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    })
   },
   async send(machine, envelope) {
     if (!machine.api_base_url) {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: 'No API base URL configured' }
     }
-    try {
-      const { response, latencyMs } = await timedFetch(machine.api_base_url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(envelope),
-      })
-      const body = await response.text()
-      return {
-        success: response.ok,
-        httpStatus: response.status,
-        responseBody: truncateBody(body),
-        latencyMs,
-        error: response.ok ? null : `HTTP ${response.status}`,
-      }
-    } catch (err) {
-      return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: (err as Error).message }
-    }
+    return requestResult(machine.api_base_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(envelope),
+    })
   },
 }
 
@@ -115,46 +117,22 @@ const webhookAdapter: DockAdapter = {
     if (!url) {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: 'No webhook URL configured' }
     }
-    try {
-      const { response, latencyMs } = await timedFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test: true, type: 'connectivity' }),
-      })
-      const body = await response.text()
-      return {
-        success: response.ok,
-        httpStatus: response.status,
-        responseBody: truncateBody(body),
-        latencyMs,
-        error: response.ok ? null : `HTTP ${response.status}`,
-      }
-    } catch (err) {
-      return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: (err as Error).message }
-    }
+    return requestResult(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ test: true, type: 'connectivity' }),
+    })
   },
   async send(machine, envelope) {
     const url = machine.location_url || machine.api_base_url
     if (!url) {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: 'No webhook URL configured' }
     }
-    try {
-      const { response, latencyMs } = await timedFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(envelope),
-      })
-      const body = await response.text()
-      return {
-        success: response.ok,
-        httpStatus: response.status,
-        responseBody: truncateBody(body),
-        latencyMs,
-        error: response.ok ? null : `HTTP ${response.status}`,
-      }
-    } catch (err) {
-      return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: (err as Error).message }
-    }
+    return requestResult(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(envelope),
+    })
   },
 }
 
@@ -166,51 +144,22 @@ const mcpAdapter: DockAdapter = {
     if (!url) {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: 'No MCP server URL configured' }
     }
-    try {
-      const { response, latencyMs } = await timedFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 1 }),
-      })
-      const body = await response.text()
-      return {
-        success: response.ok,
-        httpStatus: response.status,
-        responseBody: truncateBody(body),
-        latencyMs,
-        error: response.ok ? null : `HTTP ${response.status}`,
-      }
-    } catch (err) {
-      return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: (err as Error).message }
-    }
+    return requestResult(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 1 }),
+    })
   },
   async send(machine, envelope) {
     const url = machine.api_base_url || machine.location_url
     if (!url) {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: 'No MCP server URL configured' }
     }
-    try {
-      const { response, latencyMs } = await timedFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'tools/call',
-          params: envelope,
-          id: Date.now(),
-        }),
-      })
-      const body = await response.text()
-      return {
-        success: response.ok,
-        httpStatus: response.status,
-        responseBody: truncateBody(body),
-        latencyMs,
-        error: response.ok ? null : `HTTP ${response.status}`,
-      }
-    } catch (err) {
-      return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: (err as Error).message }
-    }
+    return requestResult(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', params: envelope, id: Date.now() }),
+    })
   },
 }
 
@@ -218,28 +167,16 @@ const webAdapter: DockAdapter = {
   type: 'web',
   description: 'Web application adapter. Tests connectivity to a hosted web app URL.',
   async test(machine) {
-    const url = machine.location_url
-    if (!url) {
+    if (!machine.location_url) {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: 'No URL configured' }
     }
-    try {
-      const { response, latencyMs } = await timedFetch(url, {
-        method: 'GET',
-        headers: { Accept: 'text/html' },
-      })
-      const body = await response.text()
-      return {
-        success: response.ok,
-        httpStatus: response.status,
-        responseBody: truncateBody(body, 2000),
-        latencyMs,
-        error: response.ok ? null : `HTTP ${response.status}`,
-      }
-    } catch (err) {
-      return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: (err as Error).message }
-    }
+    return requestResult(
+      machine.location_url,
+      { method: 'GET', headers: { Accept: 'text/html' } },
+      2000,
+    )
   },
-  async send(_machine, _envelope) {
+  async send() {
     return {
       success: false,
       httpStatus: null,
@@ -263,24 +200,9 @@ const githubAdapter: DockAdapter = {
       return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: 'Invalid GitHub repository URL' }
     }
     const apiUrl = `https://api.github.com/repos/${match[1]}/${match[2].replace(/\.git$/, '')}`
-    try {
-      const { response, latencyMs } = await timedFetch(apiUrl, {
-        method: 'GET',
-        headers: { Accept: 'application/vnd.github+json' },
-      })
-      const body = await response.text()
-      return {
-        success: response.ok,
-        httpStatus: response.status,
-        responseBody: truncateBody(body, 2000),
-        latencyMs,
-        error: response.ok ? null : `HTTP ${response.status}`,
-      }
-    } catch (err) {
-      return { success: false, httpStatus: null, responseBody: null, latencyMs: null, error: (err as Error).message }
-    }
+    return requestResult(apiUrl, { method: 'GET', headers: { Accept: 'application/vnd.github+json' } }, 2000)
   },
-  async send(_machine, _envelope) {
+  async send() {
     return {
       success: false,
       httpStatus: null,
@@ -306,7 +228,7 @@ const fileAdapter: DockAdapter = {
       error: null,
     }
   },
-  async send(_machine, _envelope) {
+  async send() {
     return {
       success: false,
       httpStatus: null,
@@ -319,8 +241,7 @@ const fileAdapter: DockAdapter = {
 
 // Registration is metadata, not proof of an executable internal integration.
 // Until Headquarters has a concrete in-process invocation registry, both test
-// and send must fail honestly so Dock cannot promote these modules to healthy /
-// connected merely because a row exists in dock_machines.
+// and send fail honestly so Dock cannot promote metadata-only modules.
 const internalAdapter: DockAdapter = {
   type: 'internal',
   description: 'Internal module adapter. Requires a concrete in-process invocation contract before it can report healthy.',
@@ -333,7 +254,7 @@ const internalAdapter: DockAdapter = {
       error: `Internal module "${machine.name}" is registered but has no executable invocation contract.`,
     }
   },
-  async send(machine, _envelope) {
+  async send(machine) {
     return {
       success: false,
       httpStatus: null,
@@ -359,8 +280,7 @@ export function getAdapter(type: string): DockAdapter | null {
 }
 
 export function getAdapterDescription(type: string): string {
-  const adapter = getAdapter(type)
-  return adapter?.description ?? 'Unknown adapter type'
+  return getAdapter(type)?.description ?? 'Unknown adapter type'
 }
 
 export function findMachinesByCapability(
@@ -368,9 +288,9 @@ export function findMachinesByCapability(
   capability: Capability,
 ): DockMachine[] {
   return machines.filter(
-    (m) =>
-      m.capabilities.includes(capability) &&
-      (m.connection_status === 'connected' || m.connection_status === 'ready-to-connect'),
+    (machine) =>
+      machine.capabilities.includes(capability) &&
+      (machine.connection_status === 'connected' || machine.connection_status === 'ready-to-connect'),
   )
 }
 
@@ -379,7 +299,7 @@ export function findConnectedMachinesByCapability(
   capability: Capability,
 ): DockMachine[] {
   return machines.filter(
-    (m) => m.capabilities.includes(capability) && m.connection_status === 'connected',
+    (machine) => machine.capabilities.includes(capability) && machine.connection_status === 'connected',
   )
 }
 
@@ -445,41 +365,49 @@ export function buildManifest(input: ManifestInput): MachineManifest {
   }
 }
 
+async function requireAuthenticatedDockSession(): Promise<void> {
+  const { data, error } = await supabase.auth.getSession()
+  if (error) {
+    throw new Error(`Dock authentication check failed: ${error.message}`)
+  }
+  if (!data.session?.access_token) {
+    throw new Error('Dock evidence persistence requires an authenticated Headquarters session.')
+  }
+}
+
 export async function saveTestResult(
   machineId: string,
   testType: string,
   result: AdapterTestResult,
 ): Promise<DockConnectionTest | null> {
-  const { data, error } = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/dock_connection_tests`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify({
-        machine_id: machineId,
-        test_type: testType,
-        http_status: result.httpStatus,
-        response_body: result.responseBody,
-        latency_ms: result.latencyMs,
-        success: result.success,
-        error: result.error,
-      }),
-    },
-  ).then((r) => r.json())
+  await requireAuthenticatedDockSession()
 
-  if (error) return null
-  return data?.[0] ?? null
+  const { data, error } = await supabase
+    .from('dock_connection_tests')
+    .insert({
+      machine_id: machineId,
+      test_type: testType,
+      http_status: result.httpStatus,
+      response_body: result.responseBody,
+      latency_ms: result.latencyMs,
+      success: result.success,
+      error: result.error,
+    })
+    .select('*')
+    .single()
+
+  if (error) {
+    throw new Error(`Failed to persist Dock connection-test evidence: ${error.message}`)
+  }
+  return (data as DockConnectionTest | null) ?? null
 }
 
 export async function updateMachineHealth(
   machineId: string,
   testResult: AdapterTestResult,
 ): Promise<void> {
+  await requireAuthenticatedDockSession()
+
   const updates: Record<string, unknown> = {
     health_status: testResult.success ? 'healthy' : 'unhealthy',
   }
@@ -492,17 +420,8 @@ export async function updateMachineHealth(
     updates.last_failure_reason = testResult.error
   }
 
-  await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/dock_machines?id=eq.${machineId}`,
-    {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        Prefer: 'return=minimal',
-      },
-      body: JSON.stringify(updates),
-    },
-  ).catch(() => {})
+  const { error } = await supabase.from('dock_machines').update(updates).eq('id', machineId)
+  if (error) {
+    throw new Error(`Failed to persist Dock machine health: ${error.message}`)
+  }
 }
