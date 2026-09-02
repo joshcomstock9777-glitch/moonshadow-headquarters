@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import Dock from './Dock'
-import DockHandoffRetryPanel from './DockHandoffRetryPanel'
 
 type GateState = 'checking' | 'ready' | 'unavailable'
 
@@ -81,8 +79,27 @@ export default function DockLiveGate() {
 
   return (
     <div className="space-y-6">
-      <DockHandoffRetryPanel />
-      <Dock />
+      <div>
+        <p className="section-eyebrow">
+          <span className="h-px w-8 bg-toxic-700" /> Moonshadow Dock
+        </p>
+        <h1 className="section-title">
+          Live Dock schema
+          <span className="italic text-toxic-300"> verified.</span>
+        </h1>
+      </div>
+
+      <div className="card p-6">
+        <p className="text-sm leading-relaxed text-ink-200">
+          Headquarters can read the adopted Dock control-plane tables: machines, handoffs,
+          and commissioning tests. The legacy Dock screen is intentionally held closed until
+          its old dock_* data model is mapped to this verified schema. This avoids presenting
+          broken controls or fabricated machine state as live operation.
+        </p>
+        <button onClick={() => void verifyLiveReads()} className="btn-secondary mt-5">
+          Recheck live evidence
+        </button>
+      </div>
     </div>
   )
 }
