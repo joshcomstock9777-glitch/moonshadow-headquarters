@@ -1,45 +1,57 @@
-# Control-plane review — 2026-09-01
+# Control-plane review — 2026-09-02
 
-Reviewed against the reconstructed snapshot and against
-`joshcomstock9777-glitch/moonshadow-headquarters` on `main`.
+Reviewed against the reconstructed control-plane snapshot and the active
+Moonshadow Headquarters commissioning state.
 
-## Verdict
+## Current verdict
 
-The packet is internally consistent and matches its own README. It is
-**not** the Headquarters schema. Do not merge it into
-`supabase/migrations`.
+The `control-plane/` packet is internally consistent as a historical schema
+snapshot/reference. It is **not** evidence that Moonshadow currently operates two
+separate Supabase projects.
 
-| Database | Ref | Owns |
-|---|---|---|
-| Headquarters / Dock | `pxmwpqhpdbooxzhcfndh` | `jobs` (pipeline), `dock_machines`, `dock_handoffs`, HQ RLS |
-| Control-plane ops | `gnjwipcbckiwyeiwczst` | `machines`, `workers`, queue-shaped `jobs`, service-role-only RLS |
+The only Supabase project directly verified and adopted for current work is:
 
-Same English words, different tables.
+| Role | Verified project ref |
+|---|---|
+| Moonshadow Headquarters / control-plane commissioning | `gnjwipcbckiwyeiwczst` |
 
-## What is solid
+Earlier repository notes named `pxmwpqhpdbooxzhcfndh` as a separate
+Headquarters/Dock database. That assumption is superseded. Do not target or recreate
+that second-project split unless new live evidence proves it and the operating map
+is deliberately changed.
+
+The separate `control-plane/` directory remains useful because its historical
+schema includes a queue-shaped `jobs` table and related operational tables whose
+shape differs from Headquarters migrations. Keep the restoration material isolated
+for migration safety; do not interpret that isolation as proof of a second live
+project.
+
+## What is solid in the snapshot
 
 - Dependency order is correct: machines/workers → jobs → events/attempts/handoffs → capability/health children → evidence/tickets.
 - Check constraints on status enums are tight and readable.
 - Unique names on machines and workers match the seed `ON CONFLICT (name)`.
-- Composite uniques on capability rows and attempt numbers are right.
-- Health indexes on `(id, checked_at DESC)` are the query you actually want.
-- RLS-on / policies-zero is documented instead of "fixed" in place. Correct.
+- Composite uniques on capability rows and attempt numbers are coherent.
+- Health indexes on `(id, checked_at DESC)` match the expected query pattern.
+- The captured RLS state is documented rather than silently rewritten.
 
 ## Gaps worth the round table
 
-1. **`jobs.machine_id` and `jobs.worker_id` are nullable, no ON DELETE.** Queueing an unassigned job is fine. Deleting a machine while jobs point at it is not defined.
-2. **`job_events` / `job_attempts` have no ON DELETE CASCADE.** You cannot delete a job while children exist. That may be intentional (evidence trail). Say so or add restrict/cascade explicitly.
-3. **Polymorphic refs have no FK:** `evidence.ref_id`, `commissioning_tests.target_id`. Expected for mixed types; orphans will accumulate.
-4. **Two capability stores.** `machines.capabilities` jsonb plus `machine_capabilities` rows. Same split on workers. One will lie first.
-5. **`jobs` has no `updated_at`.** Status flips will not show freshness except via events.
-6. **`last_heartbeat` is unindexed.** Fleet views that sort/filter on it will seq-scan once the table grows.
-7. **Seed ≠ Dock seed.** Control-plane: Headquarters, Studio Go, Editor, Comedy Studio, Story Culture Studio, Idea Lab. Dock: moonshadow-path, studio-go, moonshadow-editor, kimmy, skin-studio, content-factory, code-lab. Different registries. Do not reconcile by renaming in this baseline.
-8. **Workers seeded:** Amber idle / headquarters-control-plane, Ellie idle / studio-go-editor-factory, Claude active / infrastructure-hq-commissioning-dock, Grok idle / production-services-publishing-qa.
-9. **Service-role-only is a lockout.** Anon key returns zero rows. Fine until someone wires a browser client at this project and thinks the tables are empty.
+1. **`jobs.machine_id` and `jobs.worker_id` are nullable, no ON DELETE.** Queueing an unassigned job is fine; deletion behavior remains undefined.
+2. **`job_events` / `job_attempts` have no ON DELETE CASCADE.** This preserves evidence by default but should be an explicit contract.
+3. **Polymorphic refs have no FK:** `evidence.ref_id`, `commissioning_tests.target_id`. Orphans can accumulate.
+4. **Two capability stores.** `machines.capabilities` jsonb plus `machine_capabilities` rows, likewise for workers. One can drift from the other.
+5. **`jobs` has no `updated_at`.** Status freshness depends on related event evidence.
+6. **`last_heartbeat` is unindexed.** Fleet views can degrade as the table grows.
+7. **Snapshot seed ≠ current Dock authority.** Do not reconcile registries by renaming or inventing machines without live evidence.
+8. **Snapshot worker assignments are historical.** Current ownership comes from the team operating packet, not this seed.
+9. **The captured service-role-only state is not a browser authorization design.** Current live RLS/authentication must be verified independently.
 
-## What I did not do
+## What this review does not claim
 
-- Did not add Amber's policies.
-- Did not rewrite the baseline.
-- Did not run SQL against production.
-- Did not put these files in `supabase/migrations`.
+- It does not claim a second Supabase project exists.
+- It does not claim the historical snapshot has been applied to production.
+- It does not claim live RLS policies/functions match the snapshot.
+- It does not convert repository configuration into connection evidence.
+
+Current production claims require direct live verification.
