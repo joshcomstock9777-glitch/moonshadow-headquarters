@@ -20,6 +20,11 @@ const TONES = [
 
 const PLATFORMS = ['YouTube', 'Instagram', 'TikTok', 'X', 'Internal', 'Other']
 
+type VerifyRoundtableEvidenceResult = {
+  verified?: boolean
+  error?: string
+}
+
 type CreateResult = {
   project: Project
   job: Job
@@ -28,6 +33,16 @@ type CreateResult = {
     correlationId: string
   } | null
   kickoffError: string | null
+}
+
+async function verifyRecordedPathEvidence(messageId: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke<VerifyRoundtableEvidenceResult>(
+    'verify-roundtable-path-evidence',
+    { body: { messageId } },
+  )
+
+  if (error) throw error
+  if (!data?.verified) throw new Error(data?.error || 'Path evidence could not be verified')
 }
 
 export default function CreateFlow() {
@@ -109,7 +124,7 @@ export default function CreateFlow() {
 
       try {
         const response = await requestRoundtableReply('herman', creatorBrief)
-        const { error: replyInsertError } = await supabase
+        const { data: insertedReply, error: replyInsertError } = await supabase
           .from('roundtable_messages')
           .insert({
             project_id: projData.id,
@@ -121,8 +136,13 @@ export default function CreateFlow() {
             path_session_id: response.sessionId,
             path_correlation_id: response.correlationId,
             path_target: 'allie',
+            path_evidence_verified: false,
           })
+          .select('id')
+          .single()
         if (replyInsertError) throw replyInsertError
+
+        await verifyRecordedPathEvidence(insertedReply.id)
 
         const { data: advancedJob, error: advanceError } = await supabase
           .from('jobs')
@@ -137,7 +157,7 @@ export default function CreateFlow() {
             projData.id,
             jobData.id,
             'Herman',
-            'responded through Moonshadow Path',
+            'responded through Moonshadow Path with verified evidence',
             'success',
             `Path session ${response.sessionId.slice(0, 12)}… · correlation ${response.correlationId.slice(0, 12)}…`,
           ),
@@ -168,7 +188,7 @@ export default function CreateFlow() {
           projData.id,
           jobData.id,
           'Herman',
-          'Moonshadow Path kickoff failed; job remains at idea stage',
+          'Moonshadow Path kickoff or evidence verification failed; job remains at idea stage',
           'error',
           kickoffMessage.slice(0, 120),
         )
@@ -199,8 +219,8 @@ export default function CreateFlow() {
           </h1>
           <p className="mt-3 text-ink-300">
             {result.kickoff
-              ? 'Herman received the brief through Moonshadow Path and advanced the job to planning.'
-              : 'The project and job are durable, but automatic Moonshadow Path kickoff did not complete.'}
+              ? 'Herman received the brief through Moonshadow Path, the backend verified the recorded evidence, and the job advanced to planning.'
+              : 'The project and job are durable, but automatic Moonshadow Path kickoff did not complete with verified evidence.'}
           </p>
         </div>
 
@@ -228,7 +248,7 @@ export default function CreateFlow() {
           {result.kickoff && (
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">
-                Path evidence
+                Verified Path evidence
               </p>
               <p className="mt-1 break-all font-mono text-xs text-ink-300">
                 session {result.kickoff.sessionId} · correlation {result.kickoff.correlationId}
