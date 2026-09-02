@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import Dock from './Dock'
-import DockHandoffRetryPanel from './DockHandoffRetryPanel'
+import DockControlPlane from './DockControlPlane'
 
 type GateState = 'checking' | 'ready' | 'unavailable'
 
@@ -13,16 +12,20 @@ export default function DockLiveGate() {
     setState('checking')
     setFailedReads([])
 
-    const [machines, handoffs, tests] = await Promise.all([
-      supabase.from('dock_machines').select('id').limit(1),
-      supabase.from('dock_handoffs').select('id').limit(1),
-      supabase.from('dock_connection_tests').select('id').limit(1),
+    // The adopted control-plane schema intentionally uses unprefixed names.
+    // A successful read proves both the live table and current RLS authorization.
+    const [machines, handoffs, tests, evidence] = await Promise.all([
+      supabase.from('machines').select('id').limit(1),
+      supabase.from('handoffs').select('id').limit(1),
+      supabase.from('commissioning_tests').select('id').limit(1),
+      supabase.from('evidence').select('id').limit(1),
     ])
 
     const failures = [
       machines.error ? 'machine registry' : null,
       handoffs.error ? 'handoff ledger' : null,
-      tests.error ? 'connection-test evidence' : null,
+      tests.error ? 'commissioning-test evidence' : null,
+      evidence.error ? 'evidence ledger' : null,
     ].filter((value): value is string => value !== null)
 
     if (failures.length > 0) {
@@ -77,10 +80,5 @@ export default function DockLiveGate() {
     )
   }
 
-  return (
-    <div className="space-y-6">
-      <DockHandoffRetryPanel />
-      <Dock />
-    </div>
-  )
+  return <DockControlPlane />
 }
