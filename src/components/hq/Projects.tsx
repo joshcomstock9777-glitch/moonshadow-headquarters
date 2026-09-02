@@ -7,6 +7,7 @@ import {
   STAGE_LABELS,
   stageColor,
   timeAgo,
+  logActivity,
 } from '../../lib/hq'
 import { navigate } from '../../lib/router'
 
@@ -272,27 +273,28 @@ function JobPipeline({
     const stages = ['idea', 'plan', 'create', 'review', 'edit', 'package', 'approve', 'publish', 'done']
     const idx = stages.indexOf(job.stage)
     const next = stages[Math.min(idx + 1, stages.length - 1)]
-    await update({ stage: next })
-    await logStage(job.id, projectId, job.stage, next)
-  }
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('jobs').update({ stage: next }).eq('id', job.id)
+      if (error) throw error
 
-  async function logStage(jobId: string, pid: string, from: string, to: string) {
-    await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/activity`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        Prefer: 'return=minimal',
-      },
-      body: JSON.stringify({
-        project_id: pid,
-        job_id: jobId,
-        actor: 'Herman',
-        action: `advanced job from ${from} to ${to}`,
-        category: 'info',
-      }),
-    }).catch(() => {})
+      await logActivity(
+        projectId,
+        job.id,
+        'Herman',
+        `advanced job from ${job.stage} to ${next}`,
+        'info',
+      )
+
+      onUpdated()
+    } catch (error) {
+      console.error(
+        'Headquarters stage transition failed or lost observability evidence:',
+        error instanceof Error ? error.message : error,
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   const stages = ['idea', 'plan', 'create', 'review', 'edit', 'package', 'approve', 'publish', 'done']
