@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import type { Connection } from '../../lib/hqTypes'
+import type { DockMachine } from '../../lib/dockTypes'
 import {
   MODULES,
   MODULE_STATUS_STYLES,
@@ -10,34 +11,81 @@ import {
   CONNECTION_CATEGORIES,
 } from '../../lib/hq'
 
+const MODULE_MACHINE_ALIASES: Record<string, string[]> = {
+  'studio-go': ['studio-go', 'moonshadow-studio-go'],
+  editor: ['editor', 'moonshadow-editor', 'studio-go-editor'],
+  kimmy: ['kimmy'],
+  'skin-studio': ['skin-studio'],
+  'content-factory': ['content-factory'],
+  'code-lab': ['code-lab'],
+  'asset-library': ['asset-library', 'storage'],
+  publishing: ['publishing', 'publisher'],
+}
+
+function normalize(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')
+}
+
+function moduleMachine(moduleId: string, machines: DockMachine[]) {
+  const aliases = new Set([moduleId, ...(MODULE_MACHINE_ALIASES[moduleId] ?? [])].map(normalize))
+  return machines.find((machine) => aliases.has(normalize(machine.id)) || aliases.has(normalize(machine.name)))
+}
+
+function moduleStatus(machine: DockMachine | undefined) {
+  if (!machine) return 'unavailable'
+  if (machine.connection_status === 'connected' && machine.health_status === 'healthy') return 'connected'
+  if (machine.connection_status === 'connected') return 'development'
+  if (machine.connection_status === 'auth-required' || machine.connection_status === 'needs-auth') return 'needs-auth'
+  if (machine.connection_status === 'ready-to-connect') return 'ready-to-connect'
+  return 'unavailable'
+}
+
 export default function ToolsConnections() {
   const [connections, setConnections] = useState<Connection[]>([])
+  const [machines, setMachines] = useState<DockMachine[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [machineError, setMachineError] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setLoadError('')
-    const { data, error } = await supabase
-      .from('connections')
-      .select('*')
-      .order('category', { ascending: true })
+    setMachineError('')
 
-    if (error) {
+    const [connectionResult, machineResult] = await Promise.all([
+      supabase.from('connections').select('*').order('category', { ascending: true }),
+      supabase.from('dock_machines').select('*').order('created_at', { ascending: true }),
+    ])
+
+    if (connectionResult.error) {
       setConnections([])
-      setLoadError(error.message || 'Headquarters could not read live connection evidence from Supabase.')
-      setLoading(false)
-      return
+      setLoadError(connectionResult.error.message || 'Headquarters could not read live connection evidence from Supabase.')
+    } else {
+      setConnections(connectionResult.data ?? [])
     }
 
-    setConnections(data ?? [])
+    if (machineResult.error) {
+      setMachines([])
+      setMachineError(machineResult.error.message || 'Headquarters could not read live Dock machine evidence from Supabase.')
+    } else {
+      setMachines(machineResult.data ?? [])
+    }
+
     setLoading(false)
   }, [])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  const modules = useMemo(
+    () => MODULES.map((module) => {
+      const machine = moduleMachine(module.id, machines)
+      return { ...module, machine, status: moduleStatus(machine) }
+    }),
+    [machines],
+  )
 
   return (
     <div className="space-y-10">
@@ -50,25 +98,46 @@ export default function ToolsConnections() {
           <span className="italic text-blood-500"> connected.</span>
         </h1>
         <p className="mt-4 max-w-2xl text-ink-300">
-          Registered studios, modules, and external services. Status is read-only here and must be written by real verification or backend connection flows.
+          Registered studios, modules, and external services. Availability is derived from live Dock and connection evidence; frontend metadata cannot promote a system to connected.
         </p>
       </div>
 
       <section>
-        <h2 className="mb-4 font-display text-xl font-semibold text-ink-100">Registered Modules</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-xl font-semibold text-ink-100">Registered Modules</h2>
+          <button onClick={() => void load()} disabled={loading} className="btn-ghost">
+            {loading ? 'Checking…' : 'Refresh evidence'}
+          </button>
+        </div>
+        {machineError && (
+          <div className="mb-4 rounded-lg border border-blood-700/60 bg-blood-900/20 p-4" role="alert">
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-blood-300">Dock evidence unavailable</p>
+            <p className="mt-2 text-sm text-ink-300">Module status is fail-closed to unavailable until Headquarters can read the live Dock registry.</p>
+            <p className="mt-2 break-words text-xs text-ink-500">{machineError}</p>
+          </div>
+        )}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {MODULES.map((m) => (
-            <div key={m.id} className="card p-6">
-              <div className="flex items-start justify-between">
+          {modules.map((module) => (
+            <div key={module.id} className="card p-6">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-semibold text-ink-100">{m.name}</h3>
-                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">{m.category}</p>
+                  <h3 className="text-base font-semibold text-ink-100">{module.name}</h3>
+                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">{module.category}</p>
                 </div>
-                <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.15em] ${MODULE_STATUS_STYLES[m.status] ?? ''}`}>
-                  {MODULE_STATUS_LABELS[m.status] ?? m.status}
+                <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.15em] ${MODULE_STATUS_STYLES[module.status] ?? ''}`}>
+                  {MODULE_STATUS_LABELS[module.status] ?? module.status}
                 </span>
               </div>
-              <p className="mt-3 text-sm leading-relaxed text-ink-300">{m.desc}</p>
+              <p className="mt-3 text-sm leading-relaxed text-ink-300">{module.desc}</p>
+              {module.machine ? (
+                <div className="mt-4 border-t border-ink-800 pt-3 text-xs text-ink-400">
+                  <p>Dock machine: <span className="text-ink-200">{module.machine.name}</span></p>
+                  <p className="mt-1">Connection: {module.machine.connection_status} · Health: {module.machine.health_status}</p>
+                  <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.15em] text-ink-600">Evidence updated {new Date(module.machine.updated_at).toLocaleString()}</p>
+                </div>
+              ) : (
+                <p className="mt-4 border-t border-ink-800 pt-3 text-xs text-ink-500">No matching live Dock machine evidence.</p>
+              )}
             </div>
           ))}
         </div>
@@ -77,9 +146,6 @@ export default function ToolsConnections() {
       <section>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-display text-xl font-semibold text-ink-100">External Connections</h2>
-          <button onClick={() => void load()} disabled={loading} className="btn-ghost">
-            {loading ? 'Checking…' : 'Refresh evidence'}
-          </button>
         </div>
         <p className="mb-4 text-sm text-ink-400">
           Secrets belong server-side and are never exposed in the frontend. A connection cannot be promoted to connected from this screen; status must come from verified backend evidence.
@@ -89,53 +155,43 @@ export default function ToolsConnections() {
         ) : loadError ? (
           <div className="rounded-lg border border-blood-700/60 bg-blood-900/20 p-4">
             <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-blood-300">Live evidence unavailable</p>
-            <p className="mt-2 text-sm text-ink-300">
-              Headquarters could not verify external connection status from Supabase. No connection is being treated as connected from this screen.
-            </p>
+            <p className="mt-2 text-sm text-ink-300">Headquarters could not verify external connection status from Supabase. No connection is being treated as connected from this screen.</p>
             <p className="mt-2 break-words text-xs text-ink-500">{loadError}</p>
           </div>
         ) : connections.length === 0 ? (
-          <div className="rounded-lg border border-ink-800 bg-ink-900/30 p-4 text-sm text-ink-400">
-            Supabase returned no connection evidence. Nothing is marked connected.
-          </div>
+          <div className="rounded-lg border border-ink-800 bg-ink-900/30 p-4 text-sm text-ink-400">Supabase returned no connection evidence. Nothing is marked connected.</div>
         ) : (
           <div className="space-y-3">
-            {CONNECTION_CATEGORIES.map((cat) => {
-              const catConns = connections.filter((c) => c.category === cat)
-              if (catConns.length === 0) return null
+            {CONNECTION_CATEGORIES.map((category) => {
+              const categoryConnections = connections.filter((connection) => connection.category === category)
+              if (categoryConnections.length === 0) return null
               return (
-                <div key={cat}>
-                  <h3 className="mb-2 font-mono text-[10px] uppercase tracking-[0.3em] text-ink-500">{cat}</h3>
+                <div key={category}>
+                  <h3 className="mb-2 font-mono text-[10px] uppercase tracking-[0.3em] text-ink-500">{category}</h3>
                   <ul className="space-y-2">
-                    {catConns.map((conn) => (
-                      <li key={conn.id} className="card p-4">
+                    {categoryConnections.map((connection) => (
+                      <li key={connection.id} className="card p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium text-ink-100">{conn.name}</p>
-                              <span className={`rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.15em] ${CONNECTION_STATUS_STYLES[conn.status] ?? ''}`}>
-                                {CONNECTION_STATUS_LABELS[conn.status] ?? conn.status}
+                              <p className="text-sm font-medium text-ink-100">{connection.name}</p>
+                              <span className={`rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.15em] ${CONNECTION_STATUS_STYLES[connection.status] ?? ''}`}>
+                                {CONNECTION_STATUS_LABELS[connection.status] ?? connection.status}
                               </span>
                             </div>
-                            {conn.detail && <p className="mt-1 text-xs text-ink-400">{conn.detail}</p>}
+                            {connection.detail && <p className="mt-1 text-xs text-ink-400">{connection.detail}</p>}
                           </div>
-                          <button
-                            onClick={() => setExpanded(expanded === conn.id ? null : conn.id)}
-                            className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400 hover:text-blood-300"
-                          >
-                            {expanded === conn.id ? 'Hide' : 'Details'}
+                          <button onClick={() => setExpanded(expanded === connection.id ? null : connection.id)} className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400 hover:text-blood-300">
+                            {expanded === connection.id ? 'Hide' : 'Details'}
                           </button>
                         </div>
-                        {expanded === conn.id && (
+                        {expanded === connection.id && (
                           <div className="mt-3 border-t border-ink-800 pt-3 text-xs text-ink-400">
-                            {conn.id === 'moonshadow-path' ? (
+                            {connection.id === 'moonshadow-path' ? (
                               <div className="space-y-2">
                                 <p><span className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">Known Path Contract</span></p>
-                                <p>
-                                  Headquarters uses the existing Moonshadow Path session contract already proven by Studio Go. No replacement protocol is invented here.
-                                </p>
+                                <p>Headquarters uses the existing Moonshadow Path session contract already proven by Studio Go. No replacement protocol is invented here.</p>
                                 <ul className="ml-4 list-disc space-y-1">
-                                  <li>Production base: https://moonshadow-path-proof.vercel.app</li>
                                   <li>Create session: POST /api/sessions</li>
                                   <li>Read session: GET /api/sessions/:sessionId</li>
                                   <li>Terminal evidence: final/error session state plus correlation ID and transcript</li>
@@ -143,9 +199,7 @@ export default function ToolsConnections() {
                                 </ul>
                               </div>
                             ) : (
-                              <p>
-                                This status is informational. Actual credential setup, verification, refresh, and health checks must be performed by the service-specific backend integration before Headquarters marks it connected.
-                              </p>
+                              <p>This status is informational. Actual credential setup, verification, refresh, and health checks must be performed by the service-specific backend integration before Headquarters marks it connected.</p>
                             )}
                           </div>
                         )}
@@ -161,9 +215,7 @@ export default function ToolsConnections() {
 
       <section className="card p-6">
         <h2 className="font-display text-xl font-semibold text-ink-100">Editor Connection — Adapter Boundary</h2>
-        <p className="mt-2 text-sm text-ink-400">
-          Headquarters hands assets and projects into the shared Moonshadow Editor core rather than recreating a second editor implementation.
-        </p>
+        <p className="mt-2 text-sm text-ink-400">Headquarters hands assets and projects into the shared Moonshadow Editor core rather than recreating a second editor implementation.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {[
             ['Load media', 'Send asset references to the editor project.'],
@@ -179,9 +231,7 @@ export default function ToolsConnections() {
             </div>
           ))}
         </div>
-        <p className="mt-4 text-xs text-ink-500">
-          Until the real editor adapter reports healthy, Headquarters must show this boundary as incomplete rather than treating the internal preview as the production editor.
-        </p>
+        <p className="mt-4 text-xs text-ink-500">Until the real editor adapter reports healthy through Dock, Headquarters must show this boundary as incomplete rather than treating the internal preview as the production editor.</p>
       </section>
     </div>
   )
