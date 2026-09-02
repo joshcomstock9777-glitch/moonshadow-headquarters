@@ -79,12 +79,12 @@ export default function PublishingCenterVerified() {
       {approvals.length > 0 && (
         <section className="card p-6">
           <h2 className="font-display text-xl font-semibold text-ink-100">Pending approvals ({approvals.length})</h2>
-          <ul className="mt-4 space-y-2">
+          <p className="mt-1 text-sm text-ink-400">
+            Decisions are written through the authenticated Supabase session. Database triggers attribute the decision to the signed-in user and make terminal decisions immutable.
+          </p>
+          <ul className="mt-4 space-y-3">
             {approvals.map((approval) => (
-              <li key={approval.id} className="rounded-lg border border-ink-800 px-4 py-3">
-                <p className="text-sm font-medium text-ink-100">{approval.title}</p>
-                {approval.description && <p className="mt-1 text-xs text-ink-400">{approval.description}</p>}
-              </li>
+              <ApprovalDecisionRow key={approval.id} approval={approval} onDecision={load} />
             ))}
           </ul>
         </section>
@@ -114,6 +114,93 @@ export default function PublishingCenterVerified() {
 
       {showAdd && <AddQueueModal onClose={() => setShowAdd(false)} onAdded={load} />}
     </div>
+  )
+}
+
+function ApprovalDecisionRow({ approval, onDecision }: { approval: Approval; onDecision: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function decide(status: 'approved' | 'rejected') {
+    if (busy) return
+    const verb = status === 'approved' ? 'approve' : 'reject'
+    const reason = window.prompt(`Optional reason to ${verb} “${approval.title}”:`, '')
+    if (reason === null) return
+
+    setBusy(true)
+    setError('')
+    const { data, error: decisionError } = await supabase
+      .from('approvals')
+      .update({
+        status,
+        decision_reason: reason.trim() || null,
+      })
+      .eq('id', approval.id)
+      .eq('status', 'pending')
+      .select('id,status')
+      .single()
+
+    if (decisionError || !data || data.status !== status) {
+      setBusy(false)
+      setError(decisionError?.message ?? 'Approval decision was not confirmed by the database.')
+      return
+    }
+
+    try {
+      await logActivity(
+        approval.project_id,
+        approval.job_id,
+        'Creator',
+        `${status} approval “${approval.title}”`,
+        'approve',
+        reason.trim() || null,
+      )
+    } catch (activityError) {
+      setBusy(false)
+      setError(activityError instanceof Error ? activityError.message : 'Decision saved, but activity evidence failed to record.')
+      await onDecision()
+      return
+    }
+
+    setBusy(false)
+    await onDecision()
+  }
+
+  return (
+    <li className="rounded-lg border border-amber-700/40 bg-amber-700/5 px-4 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-ink-100">{approval.title}</p>
+          {approval.description && <p className="mt-1 text-xs text-ink-400">{approval.description}</p>}
+          <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-amber-300">
+            {timeAgo(approval.created_at)} · {approval.category}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => void decide('rejected')}
+            disabled={busy}
+            className="rounded-lg border border-blood-700/60 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-blood-300 hover:bg-blood-700/10 disabled:opacity-50"
+          >
+            Reject
+          </button>
+          <button
+            type="button"
+            onClick={() => void decide('approved')}
+            disabled={busy}
+            className="rounded-lg border border-toxic-700/60 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-toxic-300 hover:bg-toxic-700/10 disabled:opacity-50"
+          >
+            {busy ? 'Saving…' : 'Approve'}
+          </button>
+        </div>
+      </div>
+      {error && (
+        <div className="mt-3 rounded-lg border border-blood-700/60 bg-blood-900/20 px-3 py-2 text-xs text-blood-300" role="alert">
+          {error}
+        </div>
+      )}
+    </li>
   )
 }
 
