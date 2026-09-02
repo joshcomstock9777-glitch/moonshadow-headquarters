@@ -131,20 +131,33 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
           .single()
         if (insertError) throw insertError
 
+        let evidenceVerified = false
         try {
           await verifyRecordedPathEvidence(inserted.id)
+          evidenceVerified = true
         } catch (verificationError) {
+          const verificationMessage = verificationError instanceof Error ? verificationError.message : 'verification failed'
           failures.push(
-            `${ROLE_META[role].name}: reply recorded, verification pending (${verificationError instanceof Error ? verificationError.message : 'verification failed'})`,
+            `${ROLE_META[role].name}: reply recorded, verification pending (${verificationMessage})`,
           )
+          if (selectedProject) {
+            await logActivity(
+              selectedProject,
+              null,
+              ROLE_META[role].name,
+              'Roundtable Path evidence verification failed',
+              'warning',
+              `Session ${response.sessionId.slice(0, 12)}… · ${verificationMessage.slice(0, 120)}`,
+            )
+          }
         }
 
-        if (selectedProject) {
+        if (selectedProject && evidenceVerified) {
           await logActivity(
             selectedProject,
             null,
             ROLE_META[role].name,
-            'responded through Moonshadow Path',
+            'responded through verified Moonshadow Path evidence',
             'success',
             `Path session ${response.sessionId.slice(0, 12)}… · correlation ${response.correlationId.slice(0, 12)}…`,
           )
