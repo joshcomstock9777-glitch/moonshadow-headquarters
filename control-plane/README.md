@@ -2,57 +2,63 @@
 
 Reconstructed directly from live Supabase project `gnjwipcbckiwyeiwczst`
 on 2026-09-02, via `information_schema`, `pg_constraint`, `pg_indexes`,
-and `information_schema.triggers`. This was previously undocumented —
-zero migration files existed for *this* database.
+and `information_schema.triggers`.
 
-Landed in `moonshadow-headquarters` under `control-plane/` so it is
-**not** picked up by `supabase/migrations` for Headquarters
-(`pxmwpqhpdbooxzhcfndh`). Those are two different projects. HQ already
-owns `public.jobs`, `dock_machines`, and `dock_handoffs`. Applying this
-packet there would collide or no-op on the wrong `jobs` table.
+## Production project authority
+
+As of the September 2, 2026 commissioning checkpoint, `gnjwipcbckiwyeiwczst`
+is the only Supabase project that has been directly verified as real and available
+for Moonshadow Headquarters/control-plane work.
+
+Earlier notes in this repository referred to a separate Headquarters/Dock project
+(`pxmwpqhpdbooxzhcfndh`). That split is **not** an approved production assumption.
+Do not provision, target, or migrate a second Dock database from those historical
+notes unless new direct evidence establishes that project and Codex/Josh explicitly
+adopt it.
+
+The files under `control-plane/` remain a historical schema snapshot/reference.
+They are intentionally kept separate from `supabase/migrations` because their
+`jobs` shape and restoration semantics differ from the Headquarters migrations.
+That file-layout boundary is about migration safety, not proof of a second live
+Supabase project.
 
 ## Restoration order
 
-Run these against an **empty** control-plane database (`gnjwipcbckiwyeiwczst`
-clone or fresh project), never against HQ:
+Use this packet only for an explicitly approved empty restoration/clone of the
+control-plane schema. Do not run it blindly against the live Headquarters project:
 
 1. `migrations/20260902000000_control_plane_schema_baseline.sql` — structure only.
 2. `migrations/20260902001000_touch_updated_at.sql` — optional follow-on.
    Adds `touch_control_plane_updated_at()` on `machines` and `workers`.
    This changes runtime behavior. Baseline stays a clean snapshot.
-3. `seed/seed_operational_baseline.sql` — optional. Current machines and
-   workers as of 2026-09-02. Idempotent (`ON CONFLICT DO NOTHING`), but
-   review before running against a live database — these values can go
-   stale.
+3. `seed/seed_operational_baseline.sql` — optional. Machines and workers captured
+   at the 2026-09-02 snapshot. Idempotent (`ON CONFLICT DO NOTHING`), but review
+   before using because operational values can go stale.
 
-Order matters because `jobs` references `machines` and `workers`, and
-five other tables reference `jobs`, `machines`, or `workers` in turn.
+Order matters because `jobs` references `machines` and `workers`, and several
+other tables reference `jobs`, `machines`, or `workers` in turn.
 
-## Why RLS is enabled with zero policies
+## RLS state captured by the historical snapshot
 
-This is not an oversight — it's the actual, verified production state.
-Every table has RLS enabled and no policies exist, which means only the
-Supabase service-role key (which bypasses RLS entirely) can read or write
-anything. No anon or authenticated-role path exists yet.
+The baseline recorded every table with RLS enabled and no policies at the time of
+that introspection. That means browser anon/authenticated clients would not have a
+usable path through the snapshot schema; service-role access would bypass RLS.
 
-This migration intentionally reproduces that as-is. **Do not add policies
-here.** The control-plane authorization model belongs to Amber's lane —
-adding policies in this baseline would preempt a decision that hasn't
-been made yet.
+This historical baseline intentionally preserves the captured state. Do not infer
+that the current live Headquarters authorization model should remain policy-free.
+Amber's active Headquarters migrations and live verification are authoritative for
+current authentication/RLS behavior.
 
 ## Known gap the baseline does NOT fix
 
-There were no triggers or functions in the live schema on 2026-09-02.
-`updated_at` on `machines` and `workers` was set once at INSERT and never
-touched again automatically.
+There were no triggers or functions in the captured schema. `updated_at` on
+`machines` and `workers` was set at INSERT and not automatically refreshed.
 
-`20260902001000_touch_updated_at.sql` is the explicit fix, kept separate
-so the snapshot file stays honest.
+`20260902001000_touch_updated_at.sql` is the explicit historical follow-on, kept
+separate so the snapshot file stays honest.
 
-## What could not be reproduced safely
+## Safety rule
 
-Nothing was excluded for safety reasons — the live schema had no RLS
-policies, no triggers, and no functions to omit. Everything found is
-included. If a future schema read turns up policies, triggers, or
-functions that didn't exist on 2026-09-02, regenerate the baseline the
-same way (live introspection, not guessed).
+Treat this directory as evidence and restoration material, not as a second live
+control plane. Commissioning claims must come from current live-project evidence,
+not repository text alone.
