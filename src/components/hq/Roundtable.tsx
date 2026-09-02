@@ -8,8 +8,23 @@ import { requestRoundtableReply } from '../../lib/pathRoundtable'
 const ADDRESS_TARGETS = ['everybody', ...ROLES] as const
 type AddressTarget = (typeof ADDRESS_TARGETS)[number]
 
+type VerifyRoundtableEvidenceResult = {
+  verified?: boolean
+  error?: string
+}
+
 function pathTargetForRole(role: Role): 'allie' | 'amber' {
   return role === 'watcher' ? 'amber' : 'allie'
+}
+
+async function verifyRecordedPathEvidence(messageId: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke<VerifyRoundtableEvidenceResult>(
+    'verify-roundtable-path-evidence',
+    { body: { messageId } },
+  )
+
+  if (error) throw error
+  if (!data?.verified) throw new Error(data?.error || 'Path evidence could not be verified')
 }
 
 export default function Roundtable({ projectId }: { projectId?: string }) {
@@ -98,19 +113,31 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
     for (const role of addressed) {
       try {
         const response = await requestRoundtableReply(role, creatorMessage)
-        const { error: insertError } = await supabase.from('roundtable_messages').insert({
-          project_id: selectedProject,
-          role,
-          message: response.message,
-          addressed_to: 'creator',
-          kind: 'message',
-          proposed_action: null,
-          path_session_id: response.sessionId,
-          path_correlation_id: response.correlationId,
-          path_target: pathTargetForRole(role),
-          path_evidence_verified: false,
-        })
+        const { data: inserted, error: insertError } = await supabase
+          .from('roundtable_messages')
+          .insert({
+            project_id: selectedProject,
+            role,
+            message: response.message,
+            addressed_to: 'creator',
+            kind: 'message',
+            proposed_action: null,
+            path_session_id: response.sessionId,
+            path_correlation_id: response.correlationId,
+            path_target: pathTargetForRole(role),
+            path_evidence_verified: false,
+          })
+          .select('id')
+          .single()
         if (insertError) throw insertError
+
+        try {
+          await verifyRecordedPathEvidence(inserted.id)
+        } catch (verificationError) {
+          failures.push(
+            `${ROLE_META[role].name}: reply recorded, verification pending (${verificationError instanceof Error ? verificationError.message : 'verification failed'})`,
+          )
+        }
 
         if (selectedProject) {
           await logActivity(
