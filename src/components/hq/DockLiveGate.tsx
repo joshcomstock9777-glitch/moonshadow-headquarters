@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import DockControlPlane from './DockControlPlane'
 
 type GateState = 'checking' | 'ready' | 'unavailable'
 
@@ -13,16 +14,18 @@ export default function DockLiveGate() {
 
     // The adopted control-plane schema intentionally uses unprefixed names.
     // A successful read proves both the live table and current RLS authorization.
-    const [machines, handoffs, tests] = await Promise.all([
+    const [machines, handoffs, tests, evidence] = await Promise.all([
       supabase.from('machines').select('id').limit(1),
       supabase.from('handoffs').select('id').limit(1),
       supabase.from('commissioning_tests').select('id').limit(1),
+      supabase.from('evidence').select('id').limit(1),
     ])
 
     const failures = [
       machines.error ? 'machine registry' : null,
       handoffs.error ? 'handoff ledger' : null,
       tests.error ? 'commissioning-test evidence' : null,
+      evidence.error ? 'evidence ledger' : null,
     ].filter((value): value is string => value !== null)
 
     if (failures.length > 0) {
@@ -77,29 +80,5 @@ export default function DockLiveGate() {
     )
   }
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <p className="section-eyebrow">
-          <span className="h-px w-8 bg-toxic-700" /> Moonshadow Dock
-        </p>
-        <h1 className="section-title">
-          Live Dock schema
-          <span className="italic text-toxic-300"> verified.</span>
-        </h1>
-      </div>
-
-      <div className="card p-6">
-        <p className="text-sm leading-relaxed text-ink-200">
-          Headquarters can read the adopted Dock control-plane tables: machines, handoffs,
-          and commissioning tests. The legacy Dock screen is intentionally held closed until
-          its old dock_* data model is mapped to this verified schema. This avoids presenting
-          broken controls or fabricated machine state as live operation.
-        </p>
-        <button onClick={() => void verifyLiveReads()} className="btn-secondary mt-5">
-          Recheck live evidence
-        </button>
-      </div>
-    </div>
-  )
+  return <DockControlPlane />
 }
