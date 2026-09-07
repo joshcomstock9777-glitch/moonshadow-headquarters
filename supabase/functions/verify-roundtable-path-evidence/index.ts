@@ -42,7 +42,11 @@ function requiredEnv(name: string): string {
 }
 
 function pathBaseUrl(): string {
-  return (\n    Deno.env.get('PATH_API_URL')?.trim()\n    || Deno.env.get('MOONSHADOW_PATH_API_URL')?.trim()\n    || DEFAULT_PATH_BASE_URL\n  ).replace(/\/+$/, '')
+  return (
+    Deno.env.get('PATH_API_URL')?.trim()
+    || Deno.env.get('MOONSHADOW_PATH_API_URL')?.trim()
+    || DEFAULT_PATH_BASE_URL
+  ).replace(/\/+$/, '')
 }
 
 function pathSessionUrl(sessionId: string): string {
@@ -67,8 +71,12 @@ async function fetchPathSession(sessionId: string): Promise<PathSession> {
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
   try {
+    const headers: Record<string, string> = { accept: 'application/json' }
+    const pathSecret = Deno.env.get('PATH_API_SECRET')?.trim()
+    if (pathSecret) headers.authorization = `Bearer ${pathSecret}`
+
     const response = await fetch(pathSessionUrl(sessionId), {
-      headers: { accept: 'application/json' },
+      headers,
       signal: controller.signal,
     })
     const data = (await response.json().catch(() => ({}))) as PathSession
