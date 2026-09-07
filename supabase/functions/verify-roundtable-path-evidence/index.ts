@@ -42,7 +42,7 @@ function requiredEnv(name: string): string {
 }
 
 function pathBaseUrl(): string {
-  return (Deno.env.get('MOONSHADOW_PATH_API_URL')?.trim() || DEFAULT_PATH_BASE_URL).replace(/\/+$/, '')
+  return (\n    Deno.env.get('PATH_API_URL')?.trim()\n    || Deno.env.get('MOONSHADOW_PATH_API_URL')?.trim()\n    || DEFAULT_PATH_BASE_URL\n  ).replace(/\/+$/, '')
 }
 
 function pathSessionUrl(sessionId: string): string {
