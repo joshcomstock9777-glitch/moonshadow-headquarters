@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import type { Connection } from '../../lib/hqTypes'
-import type { DockMachine } from '../../lib/dockTypes'
+import { loadDockControlPlane, type DockMachineView } from '../../lib/dockControlPlane'
 import {
   MODULES,
   MODULE_STATUS_STYLES,
@@ -26,23 +26,23 @@ function normalize(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')
 }
 
-function moduleMachine(moduleId: string, machines: DockMachine[]) {
+function moduleMachine(moduleId: string, machines: DockMachineView[]) {
   const aliases = new Set([moduleId, ...(MODULE_MACHINE_ALIASES[moduleId] ?? [])].map(normalize))
   return machines.find((machine) => aliases.has(normalize(machine.id)) || aliases.has(normalize(machine.name)))
 }
 
-function moduleStatus(machine: DockMachine | undefined) {
+function moduleStatus(machine: DockMachineView | undefined) {
   if (!machine) return 'unavailable'
-  if (machine.connection_status === 'connected' && machine.health_status === 'healthy') return 'connected'
-  if (machine.connection_status === 'connected') return 'development'
-  if (machine.connection_status === 'auth-required' || machine.connection_status === 'needs-auth') return 'needs-auth'
-  if (machine.connection_status === 'ready-to-connect') return 'ready-to-connect'
+  if ((machine.status === 'online' || machine.status === 'connected') && machine.healthStatus === 'healthy') return 'connected'
+  if (machine.status === 'online' || machine.status === 'connected') return 'development'
+  if (machine.status === 'auth-required' || machine.status === 'needs-auth') return 'needs-auth'
+  if (machine.status === 'ready-to-connect') return 'ready-to-connect'
   return 'unavailable'
 }
 
 export default function ToolsConnections() {
   const [connections, setConnections] = useState<Connection[]>([])
-  const [machines, setMachines] = useState<DockMachine[]>([])
+  const [machines, setMachines] = useState<DockMachineView[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [machineError, setMachineError] = useState('')
@@ -53,9 +53,14 @@ export default function ToolsConnections() {
     setLoadError('')
     setMachineError('')
 
-    const [connectionResult, machineResult] = await Promise.all([
+    const [connectionResult, dockResult] = await Promise.all([
       supabase.from('connections').select('*').order('category', { ascending: true }),
-      supabase.from('dock_machines').select('*').order('created_at', { ascending: true }),
+      loadDockControlPlane()
+        .then((data) => ({ data, error: null as Error | null }))
+        .catch((error: unknown) => ({
+          data: null,
+          error: error instanceof Error ? error : new Error('Headquarters could not read live Dock machine evidence.'),
+        })),
     ])
 
     if (connectionResult.error) {
@@ -65,11 +70,11 @@ export default function ToolsConnections() {
       setConnections(connectionResult.data ?? [])
     }
 
-    if (machineResult.error) {
+    if (dockResult.error || !dockResult.data) {
       setMachines([])
-      setMachineError(machineResult.error.message || 'Headquarters could not read live Dock machine evidence from Supabase.')
+      setMachineError(dockResult.error?.message || 'Headquarters could not read live Dock machine evidence.')
     } else {
-      setMachines(machineResult.data ?? [])
+      setMachines(dockResult.data.machines)
     }
 
     setLoading(false)
@@ -132,8 +137,8 @@ export default function ToolsConnections() {
               {module.machine ? (
                 <div className="mt-4 border-t border-ink-800 pt-3 text-xs text-ink-400">
                   <p>Dock machine: <span className="text-ink-200">{module.machine.name}</span></p>
-                  <p className="mt-1">Connection: {module.machine.connection_status} · Health: {module.machine.health_status}</p>
-                  <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.15em] text-ink-600">Evidence updated {new Date(module.machine.updated_at).toLocaleString()}</p>
+                  <p className="mt-1">Connection: {module.machine.status} · Health: {module.machine.healthStatus}</p>
+                  <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.15em] text-ink-600">Evidence updated {new Date(module.machine.updatedAt).toLocaleString()}</p>
                 </div>
               ) : (
                 <p className="mt-4 border-t border-ink-800 pt-3 text-xs text-ink-500">No matching live Dock machine evidence.</p>
