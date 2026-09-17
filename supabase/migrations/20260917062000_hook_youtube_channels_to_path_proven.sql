@@ -26,5 +26,11 @@ WHERE
     'youtube-kimmy',
     'youtube-comedy-studio',
     'youtube-story-culture-studio',
-    'youtube-idea-lab'
+    'youtube-idea-lab',
+    'youtube-comedy-house',
+    'youtube-horror-house',
+    'youtube-technology-house',
+    'youtube-financial-house',
+    'youtube-kids-house',
+    'youtube-music-video-house'
   );
