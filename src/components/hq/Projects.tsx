@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import type { Project, Job } from '../../lib/hqTypes'
+import type { Project, Job, RenderQualityReview } from '../../lib/hqTypes'
 import {
   PROJECT_STATUS_LABELS,
   PROJECT_TYPE_LABELS,
@@ -260,6 +260,7 @@ function JobPipeline({
 }) {
   const [saving, setSaving] = useState(false)
   const [field, setField] = useState<keyof Job>(null as any)
+  const [stageError, setStageError] = useState<string | null>(null)
 
   async function update(patch: Partial<Job>) {
     setSaving(true)
@@ -274,6 +275,7 @@ function JobPipeline({
     const idx = stages.indexOf(job.stage)
     const next = stages[Math.min(idx + 1, stages.length - 1)]
     setSaving(true)
+    setStageError(null)
     try {
       const { error } = await supabase.from('jobs').update({ stage: next }).eq('id', job.id)
       if (error) throw error
@@ -288,6 +290,7 @@ function JobPipeline({
 
       onUpdated()
     } catch (error) {
+      setStageError(error instanceof Error ? error.message : 'Stage transition failed.')
       console.error(
         'Headquarters stage transition failed or lost observability evidence:',
         error instanceof Error ? error.message : error,
@@ -327,6 +330,12 @@ function JobPipeline({
           >
             Clear
           </button>
+        </div>
+      )}
+      {stageError && (
+        <div className="rounded-lg border border-blood-700/60 bg-blood-900/20 px-4 py-3 text-sm text-blood-300">
+          <span className="font-mono text-[10px] uppercase tracking-[0.2em]">Advance blocked:</span>{' '}
+          {stageError}
         </div>
       )}
 
@@ -410,6 +419,154 @@ function JobPipeline({
         placeholder="Rights and license information."
         rows={2}
         onSave={(v) => update({ rights: v })}
+      />
+      <RenderQualityGatePanel job={job} projectId={projectId} />
+    </div>
+  )
+}
+
+function clampScore(value: string): number {
+  const numeric = Number.parseInt(value, 10)
+  if (!Number.isFinite(numeric)) return 0
+  return Math.max(0, Math.min(100, numeric))
+}
+
+function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: string }) {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [qualityScore, setQualityScore] = useState(90)
+  const [originalityScore, setOriginalityScore] = useState(90)
+  const [audienceValueScore, setAudienceValueScore] = useState(85)
+  const [craftScore, setCraftScore] = useState(85)
+  const [publishReady, setPublishReady] = useState(false)
+  const [notes, setNotes] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    const { data, error: loadError } = await supabase
+      .from('render_quality_reviews')
+      .select('*')
+      .eq('job_id', job.id)
+      .maybeSingle()
+
+    if (loadError) {
+      setLoading(false)
+      setError(loadError.message)
+      return
+    }
+
+    const review = data as RenderQualityReview | null
+    if (review) {
+      setQualityScore(review.quality_score)
+      setOriginalityScore(review.originality_score)
+      setAudienceValueScore(review.audience_value_score)
+      setCraftScore(review.craft_score)
+      setPublishReady(review.publish_ready)
+      setNotes(review.notes ?? '')
+    }
+    setLoading(false)
+  }, [job.id])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const thresholdsMet = qualityScore >= 85 && originalityScore >= 85 && audienceValueScore >= 80 && craftScore >= 80
+
+  async function saveReview() {
+    setSaving(true)
+    setError(null)
+    const { error: saveError } = await supabase
+      .from('render_quality_reviews')
+      .upsert(
+        {
+          project_id: projectId,
+          job_id: job.id,
+          quality_score: qualityScore,
+          originality_score: originalityScore,
+          audience_value_score: audienceValueScore,
+          craft_score: craftScore,
+          notes: notes.trim() || null,
+          publish_ready: publishReady,
+        },
+        { onConflict: 'job_id' },
+      )
+    setSaving(false)
+
+    if (saveError) {
+      setError(saveError.message)
+      return
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-amber-700/40 bg-amber-700/5 p-5">
+      <h4 className="font-display text-lg font-semibold text-ink-100">Render quality gate</h4>
+      <p className="mt-1 text-sm text-ink-400">
+        Publish requires high-quality evidence: quality/originality ≥ 85, audience/craft ≥ 80, and publish-ready checked.
+      </p>
+      {loading ? (
+        <p className="mt-3 text-sm text-ink-400">Loading quality evidence…</p>
+      ) : (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <ScoreField label="Quality score" value={qualityScore} onChange={setQualityScore} />
+          <ScoreField label="Originality score" value={originalityScore} onChange={setOriginalityScore} />
+          <ScoreField label="Audience value score" value={audienceValueScore} onChange={setAudienceValueScore} />
+          <ScoreField label="Craft score" value={craftScore} onChange={setCraftScore} />
+          <div className="sm:col-span-2">
+            <label className="field-label">Quality notes</label>
+            <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              rows={3}
+              className="field-textarea !min-h-0 text-sm"
+              placeholder="What makes this output distinctly above average?"
+            />
+          </div>
+          <label className="sm:col-span-2 flex items-center gap-2 text-sm text-ink-200">
+            <input
+              type="checkbox"
+              checked={publishReady}
+              onChange={(event) => setPublishReady(event.target.checked)}
+            />
+            Mark publish-ready after quality review
+          </label>
+        </div>
+      )}
+      <div className="mt-4 flex items-center gap-3">
+        <span className={`font-mono text-[10px] uppercase tracking-[0.2em] ${thresholdsMet ? 'text-toxic-300' : 'text-blood-300'}`}>
+          {thresholdsMet ? 'Threshold met' : 'Threshold not met'}
+        </span>
+        <button onClick={() => void saveReview()} disabled={saving || loading} className="btn-ghost !text-xs">
+          {saving ? 'Saving…' : 'Save quality evidence'}
+        </button>
+      </div>
+      {error && <p className="mt-3 text-sm text-blood-300">{error}</p>}
+    </section>
+  )
+}
+
+function ScoreField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+}) {
+  return (
+    <div>
+      <label className="field-label">{label}</label>
+      <input
+        type="number"
+        min={0}
+        max={100}
+        value={value}
+        onChange={(event) => onChange(clampScore(event.target.value))}
+        className="field-input"
       />
     </div>
   )

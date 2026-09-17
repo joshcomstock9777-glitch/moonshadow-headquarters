@@ -114,3 +114,18 @@ export interface Connection {
   detail: string | null
   updated_at: string
 }
+
+export interface RenderQualityReview {
+  id: string
+  project_id: string | null
+  job_id: string
+  quality_score: number
+  originality_score: number
+  audience_value_score: number
+  craft_score: number
+  notes: string | null
+  publish_ready: boolean
+  reviewed_by: string | null
+  created_at: string
+  updated_at: string
+}
