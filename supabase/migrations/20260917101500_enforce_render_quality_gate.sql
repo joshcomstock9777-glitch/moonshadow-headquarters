@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS public.render_quality_reviews (
   job_id uuid NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
   quality_score integer NOT NULL CHECK (quality_score BETWEEN 0 AND 100),
   originality_score integer NOT NULL CHECK (originality_score BETWEEN 0 AND 100),
-  audience_value_score integer NOT NULL CHECK (audience_value_score BETWEEN 0 AND 100),
+  clarity_score integer NOT NULL CHECK (clarity_score BETWEEN 0 AND 100),
+  retention_prediction_score integer NOT NULL CHECK (retention_prediction_score BETWEEN 0 AND 100),
   craft_score integer NOT NULL CHECK (craft_score BETWEEN 0 AND 100),
   notes text,
   publish_ready boolean NOT NULL DEFAULT false,
@@ -61,6 +62,49 @@ DROP TRIGGER IF EXISTS render_quality_reviews_touch ON public.render_quality_rev
 CREATE TRIGGER render_quality_reviews_touch
 BEFORE UPDATE ON public.render_quality_reviews
 FOR EACH ROW EXECUTE FUNCTION public.touch_render_quality_reviews_updated_at();
+
+CREATE OR REPLACE FUNCTION public.flag_failed_render_quality_review()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.publish_ready = false
+     OR NEW.quality_score < 85
+     OR NEW.originality_score < 85
+     OR NEW.clarity_score < 80
+     OR NEW.retention_prediction_score < 80
+     OR NEW.craft_score < 80 THEN
+    UPDATE public.jobs
+    SET error = 'Quality gate failed. Concierge critic pass required with a fix plan before publish.'
+    WHERE id = NEW.job_id;
+
+    INSERT INTO public.activity (
+      project_id,
+      job_id,
+      actor,
+      action,
+      category,
+      detail
+    ) VALUES (
+      NEW.project_id,
+      NEW.job_id,
+      'AI Concierge',
+      'generated quality fix plan request',
+      'quality',
+      'Quality gate failed. Return to concierge critic pass mode for targeted hook, pacing, clarity, retention, and craft fixes.'
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS render_quality_reviews_flag_failed ON public.render_quality_reviews;
+CREATE TRIGGER render_quality_reviews_flag_failed
+AFTER INSERT OR UPDATE ON public.render_quality_reviews
+FOR EACH ROW EXECUTE FUNCTION public.flag_failed_render_quality_review();
 
 CREATE OR REPLACE FUNCTION public.enforce_job_stage_evidence()
 RETURNS trigger
@@ -125,12 +169,13 @@ BEGIN
           AND r.publish_ready = true
           AND r.quality_score >= 85
           AND r.originality_score >= 85
-          AND r.audience_value_score >= 80
+          AND r.clarity_score >= 80
+          AND r.retention_prediction_score >= 80
           AND r.craft_score >= 80
       ) INTO has_quality_gate;
 
       IF NOT has_quality_gate THEN
-        RAISE EXCEPTION 'publish stage requires high-quality render evidence (quality/originality >= 85, audience/craft >= 80, publish-ready=true)';
+        RAISE EXCEPTION 'publish stage requires high-quality render evidence (quality/originality >= 85, clarity/retention prediction/craft >= 80, publish-ready=true)';
       END IF;
     END IF;
 

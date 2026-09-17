@@ -121,7 +121,8 @@ export interface RenderQualityReview {
   job_id: string
   quality_score: number
   originality_score: number
-  audience_value_score: number
+  clarity_score: number
+  retention_prediction_score: number
   craft_score: number
   notes: string | null
   publish_ready: boolean

@@ -437,7 +437,8 @@ function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: strin
   const [error, setError] = useState<string | null>(null)
   const [qualityScore, setQualityScore] = useState(90)
   const [originalityScore, setOriginalityScore] = useState(90)
-  const [audienceValueScore, setAudienceValueScore] = useState(85)
+  const [clarityScore, setClarityScore] = useState(85)
+  const [retentionPredictionScore, setRetentionPredictionScore] = useState(85)
   const [craftScore, setCraftScore] = useState(85)
   const [publishReady, setPublishReady] = useState(false)
   const [notes, setNotes] = useState('')
@@ -461,7 +462,8 @@ function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: strin
     if (review) {
       setQualityScore(review.quality_score)
       setOriginalityScore(review.originality_score)
-      setAudienceValueScore(review.audience_value_score)
+      setClarityScore(review.clarity_score)
+      setRetentionPredictionScore(review.retention_prediction_score)
       setCraftScore(review.craft_score)
       setPublishReady(review.publish_ready)
       setNotes(review.notes ?? '')
@@ -473,7 +475,7 @@ function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: strin
     void load()
   }, [load])
 
-  const thresholdsMet = qualityScore >= 85 && originalityScore >= 85 && audienceValueScore >= 80 && craftScore >= 80
+  const thresholdsMet = qualityScore >= 85 && originalityScore >= 85 && clarityScore >= 80 && retentionPredictionScore >= 80 && craftScore >= 80
 
   async function saveReview() {
     setSaving(true)
@@ -486,7 +488,8 @@ function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: strin
           job_id: job.id,
           quality_score: qualityScore,
           originality_score: originalityScore,
-          audience_value_score: audienceValueScore,
+          clarity_score: clarityScore,
+          retention_prediction_score: retentionPredictionScore,
           craft_score: craftScore,
           notes: notes.trim() || null,
           publish_ready: publishReady,
@@ -505,7 +508,7 @@ function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: strin
     <section className="rounded-xl border border-amber-700/40 bg-amber-700/5 p-5">
       <h4 className="font-display text-lg font-semibold text-ink-100">Render quality gate</h4>
       <p className="mt-1 text-sm text-ink-400">
-        Publish requires high-quality evidence: quality/originality ≥ 85, audience/craft ≥ 80, and publish-ready checked.
+        Publish requires high-quality evidence: quality/originality ≥ 85, clarity/retention prediction/craft ≥ 80, and publish-ready checked.
       </p>
       {loading ? (
         <p className="mt-3 text-sm text-ink-400">Loading quality evidence…</p>
@@ -513,7 +516,8 @@ function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: strin
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <ScoreField label="Quality score" value={qualityScore} onChange={setQualityScore} />
           <ScoreField label="Originality score" value={originalityScore} onChange={setOriginalityScore} />
-          <ScoreField label="Audience value score" value={audienceValueScore} onChange={setAudienceValueScore} />
+          <ScoreField label="Clarity score" value={clarityScore} onChange={setClarityScore} />
+          <ScoreField label="Retention prediction score" value={retentionPredictionScore} onChange={setRetentionPredictionScore} />
           <ScoreField label="Craft score" value={craftScore} onChange={setCraftScore} />
           <div className="sm:col-span-2">
             <label className="field-label">Quality notes</label>
