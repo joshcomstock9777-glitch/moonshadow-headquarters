@@ -144,7 +144,8 @@ export default function CommandCenter() {
   const continuityReady = continuityChecks.filter((check) => check.publish_ready && check.continuity_score >= 85).length
   const hookWinners = hookLabs.filter((entry) => entry.winning_variant).length
   const thumbnailWinners = thumbnailDuels.filter((entry) => entry.winner_variant).length
-  const combinedWinnerCount = (evidenceErrors.hooks ? 0 : hookWinners) + (evidenceErrors.thumbnails ? 0 : thumbnailWinners)
+  const combinedWinnerCount = hookWinners + thumbnailWinners
+  const hookThumbnailUnknown = Boolean(evidenceErrors.hooks || evidenceErrors.thumbnails)
   const topRoiAction = roiQueue[0]
   const failedSources = Object.keys(evidenceErrors) as EvidenceSource[]
 
@@ -234,13 +235,13 @@ export default function CommandCenter() {
         />
         <StatCard
           label="Hook/thumbnail winners"
-          value={combinedWinnerCount}
+          value={hookThumbnailUnknown ? 'Unknown' : combinedWinnerCount}
           accent="text-ink-200"
           onClick={() => navigate({ name: 'hq-tools' })}
         />
       </div>
 
-      {(evidenceErrors.hooks || evidenceErrors.thumbnails) && (
+      {hookThumbnailUnknown && (
         <p className="text-xs text-ink-500">
           Hook/thumbnail experiments are optional widgets; unavailable evidence does not block Command Center core metrics.
         </p>

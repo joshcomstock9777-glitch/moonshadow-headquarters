@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import type { Project, Job, RenderQualityReview } from '../../lib/hqTypes'
+import { normalizeStoryboardV2 } from '../../lib/briefValidator'
 import {
   PROJECT_STATUS_LABELS,
   PROJECT_TYPE_LABELS,
@@ -308,10 +309,13 @@ function JobPipeline({
 
       onUpdated()
     } catch (error) {
-      setStageError(error instanceof Error ? error.message : 'Stage transition failed.')
+      const maybeMessage = typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message: unknown }).message)
+        : null
+      setStageError(maybeMessage || 'Stage transition failed.')
       console.error(
         'Headquarters stage transition failed or lost observability evidence:',
-        error instanceof Error ? error.message : error,
+        maybeMessage || error,
       )
     } finally {
       setSaving(false)
@@ -400,7 +404,7 @@ function JobPipeline({
           value={job.shots}
           placeholder="Shot 1 — … Shot 2 — …"
           rows={5}
-          onSave={(v) => update({ shots: v })}
+          onSave={(v) => update({ shots: normalizeStoryboardV2(v) })}
         />
         <PipelineField
           label="Narration / dialogue"
@@ -722,7 +726,7 @@ function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [continuityBibleId, setContinuityBibleId] = useState('moonshadow-master-bible')
+  const [continuityBibleId, setContinuityBibleId] = useState('')
   const [continuityScore, setContinuityScore] = useState(90)
   const [publishReady, setPublishReady] = useState(false)
   const [issuesText, setIssuesText] = useState('')
@@ -764,6 +768,8 @@ function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }
       setFixPlan(review.fix_plan ?? '')
     } else if (options.length > 0) {
       setContinuityBibleId(options[0])
+    } else {
+      setContinuityBibleId('')
     }
     setLoading(false)
   }, [job.id])
@@ -776,7 +782,12 @@ function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }
     setSaving(true)
     setError(null)
     const effectivePublishReady = publishReady && continuityScore >= 85
-    const selectedBibleId = bibleOptions.includes(continuityBibleId) ? continuityBibleId : (bibleOptions[0] ?? 'moonshadow-master-bible')
+    const selectedBibleId = continuityBibleId.trim()
+    if (!selectedBibleId || !bibleOptions.includes(selectedBibleId)) {
+      setSaving(false)
+      setError('Continuity Bible evidence is unavailable. Load a valid continuity_bible_id before saving.')
+      return
+    }
     const issues = issuesText
       .split(',')
       .map((entry) => entry.trim())
@@ -818,7 +829,7 @@ function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }
           <div className="sm:col-span-2">
             <label className="field-label">Continuity bible id</label>
             <select value={continuityBibleId} onChange={(event) => setContinuityBibleId(event.target.value)} className="field-input">
-              {bibleOptions.length === 0 && <option value="moonshadow-master-bible">moonshadow-master-bible</option>}
+              {bibleOptions.length === 0 && <option value="">No continuity bibles available</option>}
               {bibleOptions.map((bibleId) => (
                 <option key={bibleId} value={bibleId}>{bibleId}</option>
               ))}
@@ -843,7 +854,7 @@ function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }
         <span className={`font-mono text-[10px] uppercase tracking-[0.2em] ${gateReady ? 'text-toxic-300' : 'text-blood-300'}`}>
           {gateReady ? 'Gate ready' : 'Gate blocked'}
         </span>
-        <button onClick={() => void saveContinuity()} disabled={saving || loading} className="btn-ghost !text-xs">
+        <button onClick={() => void saveContinuity()} disabled={saving || loading || bibleOptions.length === 0} className="btn-ghost !text-xs">
           {saving ? 'Saving…' : 'Save continuity evidence'}
         </button>
       </div>

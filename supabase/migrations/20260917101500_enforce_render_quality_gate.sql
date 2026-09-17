@@ -80,21 +80,31 @@ BEGIN
     SET error = 'Quality gate failed. Concierge critic pass required with a fix plan before publish.'
     WHERE id = NEW.job_id;
 
-    INSERT INTO public.activity (
-      project_id,
-      job_id,
-      actor,
-      action,
-      category,
-      detail
-    ) VALUES (
-      NEW.project_id,
-      NEW.job_id,
-      'AI Concierge',
-      'generated quality fix plan request',
-      'quality',
-      'Quality gate failed. Return to concierge critic pass mode for targeted hook, pacing, clarity, retention, and craft fixes.'
-    );
+    IF TG_OP = 'INSERT'
+       OR (
+         OLD.publish_ready = true
+         AND OLD.quality_score >= 85
+         AND OLD.originality_score >= 85
+         AND OLD.clarity_score >= 80
+         AND OLD.retention_prediction_score >= 80
+         AND OLD.craft_score >= 80
+       ) THEN
+      INSERT INTO public.activity (
+        project_id,
+        job_id,
+        actor,
+        action,
+        category,
+        detail
+      ) VALUES (
+        NEW.project_id,
+        NEW.job_id,
+        'AI Concierge',
+        'generated quality fix plan request',
+        'quality',
+        'Quality gate failed. Return to concierge critic pass mode for targeted hook, pacing, clarity, retention, and craft fixes.'
+      );
+    END IF;
   END IF;
 
   RETURN NEW;
