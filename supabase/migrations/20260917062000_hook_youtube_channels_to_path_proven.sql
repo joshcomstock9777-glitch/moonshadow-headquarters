@@ -24,4 +24,11 @@ SET
   END
 WHERE
   category = 'publishing'
-  AND (id = 'youtube' OR id LIKE 'youtube-%');
+  AND id IN (
+    'youtube',
+    'youtube-moonshadow',
+    'youtube-kimmy',
+    'youtube-comedy-studio',
+    'youtube-story-culture-studio',
+    'youtube-idea-lab'
+  );
