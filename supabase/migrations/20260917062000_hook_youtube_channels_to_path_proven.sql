@@ -8,7 +8,10 @@
 
 UPDATE public.connections
 SET
-  status = 'ready-to-connect',
+  status = CASE
+    WHEN status = 'needs-auth' THEN 'ready-to-connect'
+    ELSE status
+  END,
   detail = 'Path-proven publisher route via Moonshadow Path is configured. Channel OAuth/API credentials must be set server-side before trusted publish confirmation can promote this connection to connected.'
 WHERE id IN (
   'youtube',
