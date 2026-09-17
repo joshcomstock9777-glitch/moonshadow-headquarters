@@ -57,7 +57,7 @@ export default function StudioShell({
               </span>
             </a>
             {isStudio && (
-              <nav className="hidden items-center gap-1 md:flex">
+              <nav className="flex max-w-[52vw] items-center gap-1 overflow-x-auto py-1 md:max-w-none">
                 <TabLink
                   href="#/studio"
                   active={route.name === 'studio'}
@@ -90,6 +90,12 @@ export default function StudioShell({
               className="btn-primary !px-4 !py-2 !text-[11px]"
             >
               Studio Home
+            </button>
+            <button
+              onClick={() => navigate({ name: 'hq-command' })}
+              className="btn-ghost !px-3 !py-2 !text-[10px]"
+            >
+              HQ
             </button>
           </div>
         </div>

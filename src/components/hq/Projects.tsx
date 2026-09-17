@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import type { Project, Job, RenderQualityReview } from '../../lib/hqTypes'
 import { normalizeStoryboardV2 } from '../../lib/briefValidator'
+import { requestRoundtableReply, type RoundtableRole } from '../../lib/pathRoundtable'
 import {
   PROJECT_STATUS_LABELS,
   PROJECT_TYPE_LABELS,
@@ -442,10 +443,163 @@ function JobPipeline({
         rows={2}
         onSave={(v) => update({ rights: v })}
       />
+      <ConciergeConsole job={job} projectId={projectId} onUpdated={onUpdated} />
       <RenderQualityGatePanel job={job} projectId={projectId} />
       <RightsCompliancePanel job={job} projectId={projectId} />
       <ContinuityGatePanel job={job} projectId={projectId} />
     </div>
+  )
+}
+
+const CONCIERGE_MODES = [
+  { id: 'do-with-you', label: 'Do With You', role: 'allie' as RoundtableRole },
+  { id: 'teach-you', label: 'Teach You', role: 'watcher' as RoundtableRole },
+  { id: 'do-for-you', label: 'Do It Himself', role: 'herman' as RoundtableRole },
+  { id: 'critic-pass', label: 'Critic Pass', role: 'challenger' as RoundtableRole },
+] as const
+
+function conciergePromptPrefix(modeId: string): string {
+  if (modeId === 'teach-you') return 'Teach mode: explain each step simply and practically.'
+  if (modeId === 'do-for-you') return 'Do-for-you mode: return a ready execution plan and deliverable instructions.'
+  if (modeId === 'critic-pass') return 'Critic-pass mode: identify weak sections and return exact improvements.'
+  return 'Do-with-you mode: collaborate step by step and ask for confirmations when needed.'
+}
+
+function ConciergeConsole({
+  job,
+  projectId,
+  onUpdated,
+}: {
+  job: Job
+  projectId: string
+  onUpdated: () => void
+}) {
+  const [modeId, setModeId] = useState<(typeof CONCIERGE_MODES)[number]['id']>('do-with-you')
+  const [prompt, setPrompt] = useState('')
+  const [reply, setReply] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const selectedMode = CONCIERGE_MODES.find((mode) => mode.id === modeId) ?? CONCIERGE_MODES[0]
+
+  async function sendToConcierge() {
+    const userPrompt = prompt.trim()
+    if (!userPrompt) {
+      setError('Give concierge direction first.')
+      return
+    }
+
+    setSending(true)
+    setError(null)
+    try {
+      const message = `${conciergePromptPrefix(modeId)}\n\nProject: ${job.title}\n\nDirection: ${userPrompt}`
+      const response = await requestRoundtableReply(selectedMode.role, message)
+
+      setReply(response.message)
+
+      await supabase.from('roundtable_messages').insert([
+        {
+          project_id: projectId,
+          role: 'creator',
+          message: userPrompt,
+          addressed_to: selectedMode.role,
+          kind: 'message',
+        },
+        {
+          project_id: projectId,
+          role: selectedMode.role,
+          message: response.message,
+          addressed_to: 'creator',
+          kind: 'message',
+          path_session_id: response.sessionId,
+          path_correlation_id: response.correlationId,
+          path_target: selectedMode.role === 'watcher' ? 'amber' : 'allie',
+          path_evidence_verified: false,
+        },
+      ])
+
+      if (modeId === 'do-for-you' || modeId === 'critic-pass') {
+        const nextEditNotes = [job.edit_notes, `Concierge (${selectedMode.label}): ${response.message}`]
+          .filter(Boolean)
+          .join('\n\n')
+        await supabase.from('jobs').update({ edit_notes: nextEditNotes }).eq('id', job.id)
+      }
+
+      await logActivity(
+        projectId,
+        job.id,
+        'AI Concierge',
+        `completed ${selectedMode.label.toLowerCase()} response`,
+        'info',
+      )
+      onUpdated()
+    } catch (requestError) {
+      const maybeMessage = typeof requestError === 'object' && requestError !== null && 'message' in requestError
+        ? String((requestError as { message: unknown }).message)
+        : 'Concierge request failed.'
+      setError(maybeMessage)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-toxic-700/40 bg-toxic-700/5 p-5">
+      <h4 className="font-display text-lg font-semibold text-ink-100">AI Concierge Console</h4>
+      <p className="mt-1 text-sm text-ink-400">Talk directly to concierge, choose a mode, and push direction into your editor/render flow.</p>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {CONCIERGE_MODES.map((mode) => (
+          <button
+            key={mode.id}
+            type="button"
+            onClick={() => setModeId(mode.id)}
+            className={`rounded-full border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] ${
+              mode.id === modeId
+                ? 'border-toxic-600 bg-toxic-700/20 text-toxic-300'
+                : 'border-ink-700 text-ink-400 hover:text-ink-200'
+            }`}
+          >
+            {mode.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <button type="button" className="btn-ghost !text-xs" onClick={() => setPrompt('Build this for me end-to-end from script to render-ready package.')}>
+          Build This For Me
+        </button>
+        <button type="button" className="btn-ghost !text-xs" onClick={() => setPrompt('Teach me this step-by-step like I am new, then give me one-click next actions.')}>
+          Teach Me The Steps
+        </button>
+      </div>
+
+      <div className="mt-4">
+        <label className="field-label">Direction for concierge</label>
+        <textarea
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          rows={4}
+          className="field-textarea !min-h-0 text-sm"
+          placeholder="Tell concierge exactly what to build, edit, or critique."
+        />
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <button type="button" onClick={() => void sendToConcierge()} disabled={sending} className="btn-primary !text-xs !py-2 !px-4">
+          {sending ? 'Talking…' : `Send to ${selectedMode.label}`}
+        </button>
+      </div>
+
+      {reply && (
+        <div className="mt-4 rounded-lg border border-ink-700 bg-ink-900/40 p-4">
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-toxic-300">Concierge reply</p>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-ink-200">{reply}</p>
+        </div>
+      )}
+
+      {error && <p className="mt-3 text-sm text-blood-300">{error}</p>}
+    </section>
   )
 }
 

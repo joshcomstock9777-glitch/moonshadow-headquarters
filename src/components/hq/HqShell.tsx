@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { navigate, type Route } from '../../lib/router'
+import { loadDockControlPlane } from '../../lib/dockControlPlane'
 
 const NAV_ITEMS = [
   { name: 'hq-command', label: 'Command', href: '#/hq/command', glyph: '⬡' },
@@ -27,6 +28,8 @@ export default function HqShell({
   const [activeJobs, setActiveJobs] = useState<number | null>(null)
   const [evidenceState, setEvidenceState] = useState<ShellEvidenceState>('loading')
   const [evidenceError, setEvidenceError] = useState<string | null>(null)
+  const [booting, setBooting] = useState(false)
+  const [bootMessage, setBootMessage] = useState<string | null>(null)
 
   useEffect(() => {
     void load()
@@ -63,6 +66,37 @@ export default function HqShell({
   const activeName = route.name
   const verifiedApprovals = evidenceState === 'verified' ? approvals : null
 
+  async function bootAllStudios() {
+    setBooting(true)
+    setBootMessage(null)
+    const [projects, assets, publishItems, rounds, connections, dock] = await Promise.all([
+      supabase.from('projects').select('id').limit(1),
+      supabase.from('assets').select('id').limit(1),
+      supabase.from('publish_items').select('id').limit(1),
+      supabase.from('roundtable_messages').select('id').limit(1),
+      supabase.from('connections').select('id').limit(1),
+      loadDockControlPlane().then(() => ({ error: null as string | null })).catch((error: unknown) => ({
+        error: error instanceof Error ? error.message : 'Dock warmup failed',
+      })),
+    ])
+
+    const errors = [
+      projects.error?.message,
+      assets.error?.message,
+      publishItems.error?.message,
+      rounds.error?.message,
+      connections.error?.message,
+      dock.error,
+    ].filter(Boolean)
+
+    if (errors.length > 0) {
+      setBootMessage('Studio warmup completed with blockers. Open Tools/Dock to resolve evidence errors.')
+    } else {
+      setBootMessage('All studios warmed and ready. Use top tabs to flip between screens with one click.')
+    }
+    setBooting(false)
+  }
+
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-40 border-b border-ink-800/80 bg-ink-950/90 backdrop-blur-md">
@@ -82,7 +116,7 @@ export default function HqShell({
             </span>
           </a>
 
-          <div className="hidden items-center gap-2 md:flex">
+          <div className="flex max-w-[54vw] items-center gap-2 overflow-x-auto py-1 md:max-w-none">
             {NAV_ITEMS.map((item) => (
               <a
                 key={item.name}
@@ -107,16 +141,37 @@ export default function HqShell({
             ))}
           </div>
 
-          <a
-            href="#/"
-            className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400 transition-colors hover:text-blood-300"
-          >
-            View Site
-          </a>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void bootAllStudios()}
+              disabled={booting}
+              className="btn-ghost !px-3 !py-1.5 !text-[10px]"
+            >
+              {booting ? 'Starting…' : 'Start All Studios'}
+            </button>
+            <a
+              href="#/studio"
+              className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400 transition-colors hover:text-blood-300"
+            >
+              Creative OS
+            </a>
+            <a
+              href="#/"
+              className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400 transition-colors hover:text-blood-300"
+            >
+              View Site
+            </a>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-[1400px] px-6 py-8">
+        {bootMessage && (
+          <div className="mb-4 rounded-lg border border-toxic-700/40 bg-toxic-700/10 p-3 text-xs text-ink-200">
+            {bootMessage}
+          </div>
+        )}
         {children}
       </main>
 
