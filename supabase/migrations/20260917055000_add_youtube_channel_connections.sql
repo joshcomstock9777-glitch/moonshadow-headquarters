@@ -13,4 +13,7 @@ SET
   name = EXCLUDED.name,
   category = EXCLUDED.category,
   status = connections.status,
-  detail = EXCLUDED.detail;
+  detail = CASE
+    WHEN connections.detail IS NULL OR btrim(connections.detail) = '' THEN EXCLUDED.detail
+    ELSE connections.detail
+  END;

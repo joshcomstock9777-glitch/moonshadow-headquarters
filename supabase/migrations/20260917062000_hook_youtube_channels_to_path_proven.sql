@@ -12,5 +12,14 @@ SET
     WHEN status = 'needs-auth' THEN 'ready-to-connect'
     ELSE status
   END,
-  detail = 'Path-proven publisher route via Moonshadow Path is configured. Channel OAuth/API credentials must be set server-side before trusted publish confirmation can promote this connection to connected.'
+  detail = CASE
+    WHEN detail IS NULL OR btrim(detail) = '' THEN
+      'Path-proven publisher route via Moonshadow Path is configured. Channel OAuth/API credentials must be set server-side before trusted publish confirmation can promote this connection to connected.'
+    WHEN detail ILIKE '%OAuth/API credentials required for the%'
+      OR detail ILIKE '%OAuth to publish videos and manage uploads.%'
+      OR detail ILIKE '%Shared YouTube publisher integration boundary%'
+    THEN
+      'Path-proven publisher route via Moonshadow Path is configured. Channel OAuth/API credentials must be set server-side before trusted publish confirmation can promote this connection to connected.'
+    ELSE detail
+  END
 WHERE id = 'youtube' OR id LIKE 'youtube-%';
