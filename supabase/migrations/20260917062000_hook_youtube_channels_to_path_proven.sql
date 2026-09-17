@@ -22,4 +22,11 @@ SET
       'Path-proven publisher route via Moonshadow Path is configured. Channel OAuth/API credentials must be set server-side before trusted publish confirmation can promote this connection to connected.'
     ELSE detail
   END
-WHERE id = 'youtube' OR id LIKE 'youtube-%';
+WHERE id IN (
+  'youtube',
+  'youtube-moonshadow',
+  'youtube-kimmy',
+  'youtube-comedy-studio',
+  'youtube-story-culture-studio',
+  'youtube-idea-lab'
+);
