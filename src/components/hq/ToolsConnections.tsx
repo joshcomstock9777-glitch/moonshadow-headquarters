@@ -203,6 +203,19 @@ export default function ToolsConnections() {
                                   <li>Retry/timeout behavior belongs in the Path client and backend, not a manual status selector</li>
                                 </ul>
                               </div>
+                            ) : connection.id === 'youtube' || connection.id.startsWith('youtube-') ? (
+                              <div className="space-y-2">
+                                <p><span className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">Path-Proven YouTube Route</span></p>
+                                <p>
+                                  YouTube publishing routes through Moonshadow Path using the existing session contract.
+                                  Channel rows track auth and health independently; browser clients still cannot mark a channel connected.
+                                </p>
+                                <ul className="ml-4 list-disc space-y-1">
+                                  <li>Queue publisher work through authenticated backend routing</li>
+                                  <li>Use server-side channel credentials only (never frontend)</li>
+                                  <li>Promote to connected only after trusted publish confirmation evidence</li>
+                                </ul>
+                              </div>
                             ) : (
                               <p>This status is informational. Actual credential setup, verification, refresh, and health checks must be performed by the service-specific backend integration before Headquarters marks it connected.</p>
                             )}
