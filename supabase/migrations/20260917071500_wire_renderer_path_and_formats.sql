@@ -1,9 +1,8 @@
 /*
-  Install special-effects packet capabilities on Skin Studio.
-  Packets installed:
-  - NSFW effects packet
-  - Blood & Gore packet
-  - Explosion packet
+  Renderer commissioning wiring:
+  - Ensure end-to-end renderer path contract is present on Moonshadow Editor.
+  - Configure output formats for clips, reels, and long-form.
+  - Ensure these production lanes exist in Content Factory.
 */
 
 UPDATE public.dock_machines
@@ -15,9 +14,10 @@ SET
       FROM unnest(
         coalesce(dock_machines.capabilities, ARRAY[]::text[])
         || ARRAY[
-          'APPLY_NSFW_EFFECTS_PACKET',
-          'APPLY_BLOOD_GORE_PACKET',
-          'APPLY_EXPLOSION_PACKET'
+          'RENDER_ART_FRAME',
+          'RENDER_CLIP',
+          'RENDER_REEL',
+          'RENDER_LONG_FORM'
         ]::text[]
       ) AS cap
     ) deduped
@@ -28,7 +28,13 @@ SET
       SELECT DISTINCT input_name
       FROM unnest(
         coalesce(dock_machines.accepted_inputs, ARRAY[]::text[])
-        || ARRAY['effects_packet']::text[]
+        || ARRAY[
+          'effects_packet',
+          'render_mode',
+          'timeline',
+          'duration_seconds',
+          'aspect_ratio'
+        ]::text[]
       ) AS input_name
     ) deduped
   ),
@@ -38,11 +44,16 @@ SET
       SELECT DISTINCT output_name
       FROM unnest(
         coalesce(dock_machines.produced_outputs, ARRAY[]::text[])
-        || ARRAY['effects_composite']::text[]
+        || ARRAY[
+          'art_frame',
+          'clip_render',
+          'reel_render',
+          'long_form_render'
+        ]::text[]
       ) AS output_name
     ) deduped
   ),
-  notes = trim(both from concat_ws(' ', dock_machines.notes, 'Special-effects packets installed: NSFW, Blood & Gore, Explosion. Keep fail-closed publishing and route final outputs through trusted Path/Publisher evidence.')),
+  notes = trim(both from concat_ws(' ', dock_machines.notes, 'Renderer path contract commissioned: idea → plan → create → render art/clip/reel/long-form → package → publish evidence.')),
   manifest = jsonb_set(
     jsonb_set(
       jsonb_set(
@@ -55,9 +66,10 @@ SET
             FROM jsonb_array_elements_text(coalesce(dock_machines.manifest->'what_can_do', '[]'::jsonb)) e(item)
             UNION
             SELECT unnest(ARRAY[
-              'Apply NSFW effects packet',
-              'Apply blood & gore packet',
-              'Apply explosion packet'
+              'Render art frames',
+              'Render clips',
+              'Render reels',
+              'Render long-form masters'
             ]::text[])
           ) s
         )
@@ -69,7 +81,13 @@ SET
           SELECT DISTINCT item
           FROM jsonb_array_elements_text(coalesce(dock_machines.manifest->'what_accepts', '[]'::jsonb)) e(item)
           UNION
-          SELECT unnest(ARRAY['Effects packet']::text[])
+          SELECT unnest(ARRAY[
+            'Effects packet',
+            'Render mode',
+            'Timeline',
+            'Duration seconds',
+            'Aspect ratio'
+          ]::text[])
         ) s
       )
     ),
@@ -80,8 +98,25 @@ SET
         SELECT DISTINCT item
         FROM jsonb_array_elements_text(coalesce(dock_machines.manifest->'what_returns', '[]'::jsonb)) e(item)
         UNION
-        SELECT unnest(ARRAY['Effects composite']::text[])
+        SELECT unnest(ARRAY[
+          'Art frame',
+          'Clip render',
+          'Reel render',
+          'Long-form render'
+        ]::text[])
       ) s
     )
   )
-WHERE id = 'skin-studio';
+WHERE id = 'moonshadow-editor';
+
+INSERT INTO public.factory_lanes (name, position)
+SELECT lane_name, lane_position
+FROM (
+  VALUES
+    ('Clips', 20),
+    ('Reels', 21),
+    ('Long Form', 22)
+) AS lanes(lane_name, lane_position)
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.factory_lanes existing WHERE existing.name = lanes.lane_name
+);

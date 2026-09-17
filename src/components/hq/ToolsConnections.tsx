@@ -22,17 +22,12 @@ const MODULE_MACHINE_ALIASES: Record<string, string[]> = {
   publishing: ['publishing', 'publisher'],
 }
 
-const YOUTUBE_PUBLISHING_CONNECTION_IDS = new Set([
-  'youtube',
-  'youtube-moonshadow',
-  'youtube-kimmy',
-  'youtube-comedy-studio',
-  'youtube-story-culture-studio',
-  'youtube-idea-lab',
-])
-
-function isYouTubePublishingConnection(connectionId: string) {
-  return YOUTUBE_PUBLISHING_CONNECTION_IDS.has(connectionId)
+function isYouTubePublishingConnection(connection: Connection) {
+  return (
+    connection.category === 'publishing'
+    && (connection.id === 'youtube' || connection.id.startsWith('youtube-'))
+    && (connection.detail?.includes('Path-proven publisher route via Moonshadow Path') ?? false)
+  )
 }
 
 function normalize(value: string) {
@@ -216,7 +211,7 @@ export default function ToolsConnections() {
                                   <li>Retry/timeout behavior belongs in the Path client and backend, not a manual status selector</li>
                                 </ul>
                               </div>
-                            ) : isYouTubePublishingConnection(connection.id) ? (
+                            ) : isYouTubePublishingConnection(connection) ? (
                               <div className="space-y-2">
                                 <p><span className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">Path-Proven YouTube Route</span></p>
                                 <p>

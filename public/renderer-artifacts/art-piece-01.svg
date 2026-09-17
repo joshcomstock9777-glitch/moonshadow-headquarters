@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#701a1a"/>
+      <stop offset="100%" stop-color="#09090b"/>
+    </radialGradient>
+    <linearGradient id="flare" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="60%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#7f1d1d"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <circle cx="930" cy="360" r="230" fill="url(#flare)" opacity="0.82"/>
+  <path d="M190 500 C340 280, 560 620, 760 360 C880 210, 970 250, 1100 180" stroke="#fca5a5" stroke-width="8" fill="none" opacity="0.7"/>
+  <text x="76" y="120" font-family="JetBrains Mono, monospace" font-size="48" fill="#fef2f2" letter-spacing="4">MOONSHADOW RENDER TEST 01</text>
+  <text x="76" y="182" font-family="Inter, sans-serif" font-size="30" fill="#fecaca">Blood / Gore packet composite preview</text>
+</svg>
