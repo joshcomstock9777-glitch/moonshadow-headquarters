@@ -24,5 +24,4 @@ SET
   END
 WHERE
   category = 'publishing'
-  AND (id = 'youtube' OR id LIKE 'youtube-%')
-  AND name ILIKE '%YouTube%';
+  AND (id = 'youtube' OR id LIKE 'youtube-%');

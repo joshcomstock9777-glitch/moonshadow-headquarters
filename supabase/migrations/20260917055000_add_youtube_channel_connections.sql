@@ -19,7 +19,10 @@ SET
     ELSE EXCLUDED.status
   END,
   detail = CASE
-    WHEN connections.category <> 'publishing' THEN EXCLUDED.detail
-    WHEN connections.detail IS NULL OR btrim(connections.detail) = '' THEN EXCLUDED.detail
-    ELSE connections.detail
+    WHEN connections.category = 'publishing'
+      AND connections.status IN ('connected', 'ready-to-connect', 'development')
+      AND connections.detail IS NOT NULL
+      AND btrim(connections.detail) <> ''
+    THEN connections.detail
+    ELSE EXCLUDED.detail
   END;
