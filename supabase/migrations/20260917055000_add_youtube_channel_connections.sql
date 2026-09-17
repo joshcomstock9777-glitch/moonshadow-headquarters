@@ -12,11 +12,12 @@ ON CONFLICT (id) DO UPDATE
 SET
   name = EXCLUDED.name,
   category = EXCLUDED.category,
-  status = connections.status,
+  status = CASE
+    WHEN connections.category = 'publishing' THEN connections.status
+    ELSE EXCLUDED.status
+  END,
   detail = CASE
+    WHEN connections.category <> 'publishing' THEN EXCLUDED.detail
     WHEN connections.detail IS NULL OR btrim(connections.detail) = '' THEN EXCLUDED.detail
     ELSE connections.detail
-  END
-WHERE
-  connections.category = 'publishing'
-  AND connections.name ILIKE '%YouTube%';
+  END;
