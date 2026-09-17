@@ -156,6 +156,19 @@ SET
   audio_system_profile = EXCLUDED.audio_system_profile,
   success_targets = EXCLUDED.success_targets;
 
+UPDATE public.factory_lanes AS existing
+SET position = lanes.lane_position
+FROM (
+  VALUES
+    ('Comedy House', 30),
+    ('Horror House', 31),
+    ('Technology House', 32),
+    ('Financial House', 33),
+    ('Kids House', 34),
+    ('Music Video House', 35)
+) AS lanes(lane_name, lane_position)
+WHERE existing.name = lanes.lane_name;
+
 INSERT INTO public.factory_lanes (name, position)
 SELECT lane_name, lane_position
 FROM (
@@ -167,5 +180,6 @@ FROM (
     ('Kids House', 34),
     ('Music Video House', 35)
 ) AS lanes(lane_name, lane_position)
-ON CONFLICT (name) DO UPDATE
-SET position = EXCLUDED.position;
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.factory_lanes existing WHERE existing.name = lanes.lane_name
+);

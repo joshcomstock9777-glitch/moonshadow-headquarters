@@ -80,7 +80,7 @@ export const MODULES = [
     name: 'Moonshadow Editor',
     category: 'Edit',
     status: 'unavailable',
-    desc: 'Creative Operating System editor. Load media, open a project, request edits, receive exports.',
+    desc: 'Creative Operating System editor with concierge modes: do with you, teach you, or do it himself.',
   },
   {
     id: 'kimmy',

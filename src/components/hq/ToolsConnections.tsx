@@ -271,6 +271,10 @@ export default function ToolsConnections() {
             ['Create / open project', 'Initialize or resume an editor session for a Headquarters project.'],
             ['Send assets', 'Push assets from the library into the editor timeline.'],
             ['Request edits', 'Send edit notes and instructions.'],
+            ['Concierge — Do With You', 'Guided co-edit mode where creator and concierge shape the edit together.'],
+            ['Concierge — Teach You', 'Training mode where concierge explains tools, workflow, and sequencing step by step.'],
+            ['Concierge — Do It Himself', 'Autonomous mode where concierge executes the full edit path and returns deliverables.'],
+            ['Concierge packets/effects', 'Concierge can apply editor packets and effects chains as part of render instructions.'],
             ['Receive previews', 'Receive preview renders back into the asset library.'],
             ['Receive exports', 'Final exports land as assets and can enter the publishing queue.'],
           ].map(([label, desc]) => (
