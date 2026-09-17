@@ -18,7 +18,7 @@ const TONES = [
   'Bleak and hopeless',
 ]
 
-const PLATFORMS = ['YouTube', 'Instagram', 'TikTok', 'X', 'Internal', 'Other']
+const PLATFORMS = ['YouTube', 'Instagram', 'Facebook', 'TikTok', 'X', 'Internal', 'Other']
 
 type VerifyRoundtableEvidenceResult = {
   verified?: boolean

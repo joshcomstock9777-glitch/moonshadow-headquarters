@@ -244,6 +244,8 @@ export const PROJECT_TYPES = [
   'horror-house',
   'technology-house',
   'financial-house',
+  'kids-house',
+  'music-video-house',
 ] as const
 
 export const PROJECT_TYPE_LABELS: Record<string, string> = {
@@ -258,7 +260,54 @@ export const PROJECT_TYPE_LABELS: Record<string, string> = {
   'horror-house': 'Horror House',
   'technology-house': 'Technology House',
   'financial-house': 'Financial House',
+  'kids-house': 'Kids House',
+  'music-video-house': 'Music Video House',
 }
+
+export const HOUSE_STRATEGY = [
+  {
+    id: 'financial-house',
+    label: 'Financial House',
+    monetizationPriority: 1,
+    focus: ['personal finance basics', 'fraud prevention and scam breakdowns', 'side-hustle systems', 'business case studies'],
+    outputs: ['clips', 'reels', 'long-form'],
+  },
+  {
+    id: 'technology-house',
+    label: 'Technology House',
+    monetizationPriority: 2,
+    focus: ['AI tutorials', 'automation workflows', 'product explainers', 'tool comparisons'],
+    outputs: ['clips', 'reels', 'long-form'],
+  },
+  {
+    id: 'comedy-house',
+    label: 'Comedy House',
+    monetizationPriority: 3,
+    focus: ['sketches', 'reactions', 'character shorts', 'trend remixes'],
+    outputs: ['clips', 'reels', 'long-form'],
+  },
+  {
+    id: 'horror-house',
+    label: 'Horror House',
+    monetizationPriority: 4,
+    focus: ['story episodes', 'lore explainers', 'cinematic shorts', 'found-footage arcs'],
+    outputs: ['clips', 'reels', 'long-form'],
+  },
+  {
+    id: 'kids-house',
+    label: 'Kids House',
+    monetizationPriority: 5,
+    focus: ['safe educational entertainment', 'song loops', 'simple stories', 'character learning segments'],
+    outputs: ['clips', 'reels', 'long-form'],
+  },
+  {
+    id: 'music-video-house',
+    label: 'Music Video House',
+    monetizationPriority: 6,
+    focus: ['music videos', 'lyric clips', 'visualizer loops', 'live-session edits'],
+    outputs: ['clips', 'reels', 'long-form'],
+  },
+] as const
 
 export const PROJECT_STATUSES = ['active', 'paused', 'archived'] as const
 export const PROJECT_STATUS_LABELS: Record<string, string> = {

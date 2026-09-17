@@ -33,12 +33,29 @@ const PATH_ROUTED_YOUTUBE_CONNECTION_IDS = new Set([
   'youtube-horror-house',
   'youtube-technology-house',
   'youtube-financial-house',
+  'youtube-kids-house',
+  'youtube-music-video-house',
+])
+
+const PATH_ROUTED_SOCIAL_PROMOTION_IDS = new Set([
+  'social-promotion-hub',
+  'instagram-comedy-house', 'instagram-horror-house', 'instagram-technology-house', 'instagram-financial-house', 'instagram-kids-house', 'instagram-music-video-house',
+  'facebook-comedy-house', 'facebook-horror-house', 'facebook-technology-house', 'facebook-financial-house', 'facebook-kids-house', 'facebook-music-video-house',
+  'tiktok-comedy-house', 'tiktok-horror-house', 'tiktok-technology-house', 'tiktok-financial-house', 'tiktok-kids-house', 'tiktok-music-video-house',
+  'x-comedy-house', 'x-horror-house', 'x-technology-house', 'x-financial-house', 'x-kids-house', 'x-music-video-house',
 ])
 
 function isYouTubePublishingConnection(connection: Connection) {
   return (
     connection.category === 'publishing'
     && PATH_ROUTED_YOUTUBE_CONNECTION_IDS.has(connection.id)
+  )
+}
+
+function isSocialPromotionConnection(connection: Connection) {
+  return (
+    connection.category === 'publishing'
+    && PATH_ROUTED_SOCIAL_PROMOTION_IDS.has(connection.id)
   )
 }
 
@@ -234,6 +251,19 @@ export default function ToolsConnections() {
                                   <li>Queue publisher work through authenticated backend routing</li>
                                   <li>Use server-side channel credentials only (never frontend)</li>
                                   <li>Promote to connected only after trusted publish confirmation evidence</li>
+                                </ul>
+                              </div>
+                            ) : isSocialPromotionConnection(connection) ? (
+                              <div className="space-y-2">
+                                <p><span className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">Path-Proven Social Promotion Route</span></p>
+                                <p>
+                                  Social publishing and promotion routes through Moonshadow Path using backend-held credentials.
+                                  House-level rows isolate authorization and health evidence by platform.
+                                </p>
+                                <ul className="ml-4 list-disc space-y-1">
+                                  <li>Queue social promotion through authenticated backend routing</li>
+                                  <li>Use provider/app credentials server-side only</li>
+                                  <li>Keep status fail-closed until backend verification evidence exists</li>
                                 </ul>
                               </div>
                             ) : (

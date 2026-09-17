@@ -62,5 +62,4 @@ SET
       AND btrim(connections.detail) <> ''
     THEN connections.detail
     ELSE EXCLUDED.detail
-  END
-WHERE connections.category = 'publishing';
+  END;
