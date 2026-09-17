@@ -219,6 +219,7 @@ function laneToType(lane: string): string {
     'Financial House': 'financial-house',
     'Kids House': 'kids-house',
     'Music Video House': 'music-video-house',
+    'Adult AI House': 'adult-house',
   }
   return map[lane] ?? ''
 }

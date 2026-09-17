@@ -11,6 +11,24 @@ import {
 } from '../../lib/hq'
 import { navigate } from '../../lib/router'
 
+type RightsComplianceReview = {
+  music_rights_ok: boolean
+  image_rights_ok: boolean
+  clip_rights_ok: boolean
+  policy_safety_ok: boolean
+  publish_allowed: boolean
+  notes: string | null
+  violations: string[]
+}
+
+type ContinuityCheck = {
+  continuity_bible_id: string
+  continuity_score: number
+  issues: string[]
+  fix_plan: string | null
+  publish_ready: boolean
+}
+
 export default function ProjectsList() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -421,6 +439,8 @@ function JobPipeline({
         onSave={(v) => update({ rights: v })}
       />
       <RenderQualityGatePanel job={job} projectId={projectId} />
+      <RightsCompliancePanel job={job} projectId={projectId} />
+      <ContinuityGatePanel job={job} projectId={projectId} />
     </div>
   )
 }
@@ -573,6 +593,226 @@ function ScoreField({
         className="field-input"
       />
     </div>
+  )
+}
+
+function RightsCompliancePanel({ job, projectId }: { job: Job; projectId: string }) {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [musicRightsOk, setMusicRightsOk] = useState(false)
+  const [imageRightsOk, setImageRightsOk] = useState(false)
+  const [clipRightsOk, setClipRightsOk] = useState(false)
+  const [policySafetyOk, setPolicySafetyOk] = useState(false)
+  const [publishAllowed, setPublishAllowed] = useState(false)
+  const [notes, setNotes] = useState('')
+  const [violationsText, setViolationsText] = useState('')
+
+  const allChecksPassed = musicRightsOk && imageRightsOk && clipRightsOk && policySafetyOk && publishAllowed
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    const { data, error: loadError } = await supabase
+      .from('rights_compliance_reviews')
+      .select('*')
+      .eq('job_id', job.id)
+      .maybeSingle()
+
+    if (loadError) {
+      setError(loadError.message)
+      setLoading(false)
+      return
+    }
+
+    const review = data as RightsComplianceReview | null
+    if (review) {
+      setMusicRightsOk(review.music_rights_ok)
+      setImageRightsOk(review.image_rights_ok)
+      setClipRightsOk(review.clip_rights_ok)
+      setPolicySafetyOk(review.policy_safety_ok)
+      setPublishAllowed(review.publish_allowed)
+      setNotes(review.notes ?? '')
+      setViolationsText((review.violations ?? []).join(', '))
+    }
+    setLoading(false)
+  }, [job.id])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  async function saveReview() {
+    setSaving(true)
+    setError(null)
+    const violations = violationsText
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+
+    const { error: saveError } = await supabase
+      .from('rights_compliance_reviews')
+      .upsert(
+        {
+          project_id: projectId,
+          job_id: job.id,
+          music_rights_ok: musicRightsOk,
+          image_rights_ok: imageRightsOk,
+          clip_rights_ok: clipRightsOk,
+          policy_safety_ok: policySafetyOk,
+          publish_allowed: publishAllowed,
+          notes: notes.trim() || null,
+          violations,
+        },
+        { onConflict: 'job_id' },
+      )
+
+    setSaving(false)
+    if (saveError) setError(saveError.message)
+  }
+
+  return (
+    <section className="rounded-xl border border-blood-700/40 bg-blood-700/5 p-5">
+      <h4 className="font-display text-lg font-semibold text-ink-100">Rights & compliance gate</h4>
+      <p className="mt-1 text-sm text-ink-400">No rights, no publish. All checks must be true before publish is allowed.</p>
+      {loading ? (
+        <p className="mt-3 text-sm text-ink-400">Loading rights evidence…</p>
+      ) : (
+        <div className="mt-4 space-y-3 text-sm text-ink-200">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={musicRightsOk} onChange={(event) => setMusicRightsOk(event.target.checked)} /> Music rights verified</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={imageRightsOk} onChange={(event) => setImageRightsOk(event.target.checked)} /> Image rights verified</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={clipRightsOk} onChange={(event) => setClipRightsOk(event.target.checked)} /> Clip rights verified</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={policySafetyOk} onChange={(event) => setPolicySafetyOk(event.target.checked)} /> Policy safety verified</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={publishAllowed} onChange={(event) => setPublishAllowed(event.target.checked)} /> Publish allowed</label>
+          <div>
+            <label className="field-label">Violations (comma separated)</label>
+            <input value={violationsText} onChange={(event) => setViolationsText(event.target.value)} className="field-input" placeholder="missing license, policy mismatch" />
+          </div>
+          <div>
+            <label className="field-label">Notes</label>
+            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className="field-textarea !min-h-0 text-sm" />
+          </div>
+        </div>
+      )}
+      <div className="mt-4 flex items-center gap-3">
+        <span className={`font-mono text-[10px] uppercase tracking-[0.2em] ${allChecksPassed ? 'text-toxic-300' : 'text-blood-300'}`}>
+          {allChecksPassed ? 'Gate ready' : 'Gate blocked'}
+        </span>
+        <button onClick={() => void saveReview()} disabled={saving || loading} className="btn-ghost !text-xs">
+          {saving ? 'Saving…' : 'Save rights evidence'}
+        </button>
+      </div>
+      {error && <p className="mt-3 text-sm text-blood-300">{error}</p>}
+    </section>
+  )
+}
+
+function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }) {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [continuityBibleId, setContinuityBibleId] = useState('moonshadow-master-bible')
+  const [continuityScore, setContinuityScore] = useState(90)
+  const [publishReady, setPublishReady] = useState(false)
+  const [issuesText, setIssuesText] = useState('')
+  const [fixPlan, setFixPlan] = useState('')
+
+  const gateReady = publishReady && continuityScore >= 85
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    const { data, error: loadError } = await supabase
+      .from('continuity_checks')
+      .select('*')
+      .eq('job_id', job.id)
+      .maybeSingle()
+
+    if (loadError) {
+      setError(loadError.message)
+      setLoading(false)
+      return
+    }
+
+    const review = data as ContinuityCheck | null
+    if (review) {
+      setContinuityBibleId(review.continuity_bible_id)
+      setContinuityScore(review.continuity_score)
+      setPublishReady(review.publish_ready)
+      setIssuesText((review.issues ?? []).join(', '))
+      setFixPlan(review.fix_plan ?? '')
+    }
+    setLoading(false)
+  }, [job.id])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  async function saveContinuity() {
+    setSaving(true)
+    setError(null)
+    const issues = issuesText
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+
+    const { error: saveError } = await supabase
+      .from('continuity_checks')
+      .upsert(
+        {
+          project_id: projectId,
+          job_id: job.id,
+          continuity_bible_id: continuityBibleId.trim() || 'moonshadow-master-bible',
+          continuity_score: continuityScore,
+          issues,
+          fix_plan: fixPlan.trim() || null,
+          publish_ready: publishReady,
+        },
+        { onConflict: 'job_id' },
+      )
+
+    setSaving(false)
+    if (saveError) setError(saveError.message)
+  }
+
+  return (
+    <section className="rounded-xl border border-ink-700 bg-ink-900/40 p-5">
+      <h4 className="font-display text-lg font-semibold text-ink-100">Continuity Bible gate</h4>
+      <p className="mt-1 text-sm text-ink-400">Every publish flow must pass continuity Bible review with score ≥ 85.</p>
+      {loading ? (
+        <p className="mt-3 text-sm text-ink-400">Loading continuity evidence…</p>
+      ) : (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="field-label">Continuity bible id</label>
+            <input value={continuityBibleId} onChange={(event) => setContinuityBibleId(event.target.value)} className="field-input" placeholder="moonshadow-master-bible" />
+          </div>
+          <ScoreField label="Continuity score" value={continuityScore} onChange={setContinuityScore} />
+          <label className="flex items-end gap-2 pb-2 text-sm text-ink-200">
+            <input type="checkbox" checked={publishReady} onChange={(event) => setPublishReady(event.target.checked)} />
+            Mark continuity publish-ready
+          </label>
+          <div className="sm:col-span-2">
+            <label className="field-label">Continuity issues (comma separated)</label>
+            <input value={issuesText} onChange={(event) => setIssuesText(event.target.value)} className="field-input" placeholder="timeline mismatch, character trait drift" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="field-label">Fix plan</label>
+            <textarea value={fixPlan} onChange={(event) => setFixPlan(event.target.value)} rows={3} className="field-textarea !min-h-0 text-sm" />
+          </div>
+        </div>
+      )}
+      <div className="mt-4 flex items-center gap-3">
+        <span className={`font-mono text-[10px] uppercase tracking-[0.2em] ${gateReady ? 'text-toxic-300' : 'text-blood-300'}`}>
+          {gateReady ? 'Gate ready' : 'Gate blocked'}
+        </span>
+        <button onClick={() => void saveContinuity()} disabled={saving || loading} className="btn-ghost !text-xs">
+          {saving ? 'Saving…' : 'Save continuity evidence'}
+        </button>
+      </div>
+      {error && <p className="mt-3 text-sm text-blood-300">{error}</p>}
+    </section>
   )
 }
 

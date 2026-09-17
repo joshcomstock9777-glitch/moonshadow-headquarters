@@ -11,8 +11,25 @@ import {
 } from '../../lib/hq'
 import { navigate } from '../../lib/router'
 
-type EvidenceSource = 'jobs' | 'approvals' | 'activity' | 'projects' | 'connections'
+type EvidenceSource =
+  | 'jobs'
+  | 'approvals'
+  | 'activity'
+  | 'projects'
+  | 'connections'
+  | 'quality'
+  | 'promotion'
+  | 'continuity'
+  | 'roi'
+  | 'hooks'
+  | 'thumbnails'
 type EvidenceErrors = Partial<Record<EvidenceSource, string>>
+type RenderQualityEvidence = { publish_ready: boolean; quality_score: number; originality_score: number; clarity_score: number; retention_prediction_score: number; craft_score: number }
+type SocialPromotionJob = { status: string }
+type ContinuityCheck = { publish_ready: boolean; continuity_score: number }
+type RoiQueueRow = { house_label: string; highest_roi_next_action: string; blocked_jobs: number }
+type HookLab = { id: string; winning_variant: string | null }
+type ThumbnailDuel = { id: string; winner_variant: string | null }
 
 export default function CommandCenter() {
   const [jobs, setJobs] = useState<Job[]>([])
@@ -20,6 +37,12 @@ export default function CommandCenter() {
   const [activity, setActivity] = useState<Activity[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
+  const [qualityReviews, setQualityReviews] = useState<RenderQualityEvidence[]>([])
+  const [promotionJobs, setPromotionJobs] = useState<SocialPromotionJob[]>([])
+  const [continuityChecks, setContinuityChecks] = useState<ContinuityCheck[]>([])
+  const [roiQueue, setRoiQueue] = useState<RoiQueueRow[]>([])
+  const [hookLabs, setHookLabs] = useState<HookLab[]>([])
+  const [thumbnailDuels, setThumbnailDuels] = useState<ThumbnailDuel[]>([])
   const [loading, setLoading] = useState(true)
   const [evidenceErrors, setEvidenceErrors] = useState<EvidenceErrors>({})
 
@@ -27,7 +50,7 @@ export default function CommandCenter() {
     setLoading(true)
     setEvidenceErrors({})
 
-    const [j, a, act, p, c] = await Promise.all([
+    const [j, a, act, p, c, q, s, cc, roi, hooks, thumbs] = await Promise.all([
       supabase
         .from('jobs')
         .select('*')
@@ -52,6 +75,36 @@ export default function CommandCenter() {
         .from('connections')
         .select('*')
         .order('name', { ascending: true }),
+      supabase
+        .from('render_quality_reviews')
+        .select('publish_ready,quality_score,originality_score,clarity_score,retention_prediction_score,craft_score')
+        .order('updated_at', { ascending: false })
+        .limit(40),
+      supabase
+        .from('social_promotion_jobs')
+        .select('status')
+        .order('updated_at', { ascending: false })
+        .limit(40),
+      supabase
+        .from('continuity_checks')
+        .select('publish_ready,continuity_score')
+        .order('updated_at', { ascending: false })
+        .limit(40),
+      supabase
+        .from('command_center_roi_queue')
+        .select('house_label,highest_roi_next_action,blocked_jobs')
+        .order('monetization_priority', { ascending: true })
+        .limit(6),
+      supabase
+        .from('hook_labs')
+        .select('id,winning_variant')
+        .order('updated_at', { ascending: false })
+        .limit(40),
+      supabase
+        .from('thumbnail_duels')
+        .select('id,winner_variant')
+        .order('updated_at', { ascending: false })
+        .limit(40),
     ])
 
     const nextErrors: EvidenceErrors = {}
@@ -60,12 +113,24 @@ export default function CommandCenter() {
     if (act.error) nextErrors.activity = act.error.message
     if (p.error) nextErrors.projects = p.error.message
     if (c.error) nextErrors.connections = c.error.message
+    if (q.error) nextErrors.quality = q.error.message
+    if (s.error) nextErrors.promotion = s.error.message
+    if (cc.error) nextErrors.continuity = cc.error.message
+    if (roi.error) nextErrors.roi = roi.error.message
+    if (hooks.error) nextErrors.hooks = hooks.error.message
+    if (thumbs.error) nextErrors.thumbnails = thumbs.error.message
 
     setJobs(j.error ? [] : (j.data ?? []))
     setApprovals(a.error ? [] : (a.data ?? []))
     setActivity(act.error ? [] : (act.data ?? []))
     setProjects(p.error ? [] : (p.data ?? []))
     setConnections(c.error ? [] : (c.data ?? []))
+    setQualityReviews(q.error ? [] : (q.data ?? []))
+    setPromotionJobs(s.error ? [] : (s.data ?? []))
+    setContinuityChecks(cc.error ? [] : (cc.data ?? []))
+    setRoiQueue(roi.error ? [] : (roi.data ?? []))
+    setHookLabs(hooks.error ? [] : (hooks.data ?? []))
+    setThumbnailDuels(thumbs.error ? [] : (thumbs.data ?? []))
     setEvidenceErrors(nextErrors)
     setLoading(false)
   }, [])
@@ -77,6 +142,12 @@ export default function CommandCenter() {
   const connectedCount = connections.filter((connection) => connection.status === 'connected').length
   const blocked = jobs.filter((j) => j.error)
   const waitingApprovals = approvals.length
+  const publishReadyReviews = qualityReviews.filter((review) => review.publish_ready).length
+  const promotionQueued = promotionJobs.filter((job) => job.status === 'queued' || job.status === 'running').length
+  const continuityReady = continuityChecks.filter((check) => check.publish_ready && check.continuity_score >= 85).length
+  const hookWinners = hookLabs.filter((entry) => entry.winning_variant).length
+  const thumbnailWinners = thumbnailDuels.filter((entry) => entry.winner_variant).length
+  const topRoiAction = roiQueue[0]
   const failedSources = Object.keys(evidenceErrors) as EvidenceSource[]
 
   return (
@@ -143,6 +214,49 @@ export default function CommandCenter() {
           onClick={() => navigate({ name: 'hq-tools' })}
         />
       </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Quality gate ready"
+          value={evidenceErrors.quality ? 'Unknown' : publishReadyReviews}
+          accent="text-toxic-300"
+          onClick={() => navigate({ name: 'hq-projects' })}
+        />
+        <StatCard
+          label="Promotion autopilot queue"
+          value={evidenceErrors.promotion ? 'Unknown' : promotionQueued}
+          accent="text-amber-300"
+          onClick={() => navigate({ name: 'hq-publish' })}
+        />
+        <StatCard
+          label="Continuity ready"
+          value={evidenceErrors.continuity ? 'Unknown' : continuityReady}
+          accent="text-blood-300"
+          onClick={() => navigate({ name: 'hq-projects' })}
+        />
+        <StatCard
+          label="Hook/thumbnail winners"
+          value={evidenceErrors.hooks || evidenceErrors.thumbnails ? 'Unknown' : `${hookWinners + thumbnailWinners}`}
+          accent="text-ink-200"
+          onClick={() => navigate({ name: 'hq-tools' })}
+        />
+      </div>
+
+      <section className="card p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-xl font-semibold text-ink-100">Highest ROI next action</h2>
+          {!evidenceErrors.roi && topRoiAction?.house_label && (
+            <span className="rounded-full border border-blood-700/50 bg-blood-700/10 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-blood-300">
+              {topRoiAction.house_label}
+            </span>
+          )}
+        </div>
+        <p className="mt-2 text-sm text-ink-300">
+          {evidenceErrors.roi
+            ? 'ROI queue evidence unavailable. Headquarters will not guess a priority action.'
+            : (topRoiAction?.highest_roi_next_action ?? 'ROI queue evidence is unavailable until strategy + metrics rows are present.')}
+        </p>
+      </section>
 
       <div className="card p-6">
         <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">

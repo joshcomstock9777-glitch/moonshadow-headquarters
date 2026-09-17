@@ -80,7 +80,7 @@ export const MODULES = [
     name: 'Moonshadow Editor',
     category: 'Edit',
     status: 'unavailable',
-    desc: 'Creative Operating System editor with concierge modes: do with you, teach you, or do it himself.',
+    desc: 'Creative Operating System editor with concierge modes: do with you, teach you, do it himself, and critic pass plus music workflows.',
   },
   {
     id: 'kimmy',
@@ -123,6 +123,13 @@ export const MODULES = [
     category: 'Distribution',
     status: 'unavailable',
     desc: 'Publishing queue with destination connectors and scheduling.',
+  },
+  {
+    id: 'adult-ai-studio',
+    name: 'Adult AI Studio',
+    category: 'Restricted Creative',
+    status: 'unavailable',
+    desc: 'Age-gated adult text/image/video lane with continuity Bible and rights gate enforcement.',
   },
 ] as const
 
@@ -246,6 +253,7 @@ export const PROJECT_TYPES = [
   'financial-house',
   'kids-house',
   'music-video-house',
+  'adult-house',
 ] as const
 
 export const PROJECT_TYPE_LABELS: Record<string, string> = {
@@ -262,6 +270,7 @@ export const PROJECT_TYPE_LABELS: Record<string, string> = {
   'financial-house': 'Financial House',
   'kids-house': 'Kids House',
   'music-video-house': 'Music Video House',
+  'adult-house': 'Adult AI House',
 }
 
 export const PROJECT_STATUSES = ['active', 'paused', 'archived'] as const

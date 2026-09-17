@@ -21,6 +21,7 @@ const MODULE_MACHINE_ALIASES: Record<string, string[]> = {
   'code-lab': ['code-lab'],
   'asset-library': ['asset-library', 'storage'],
   publishing: ['publishing', 'publisher'],
+  'adult-ai-studio': ['adult-ai-studio', 'adult-ai-hub'],
 }
 
 const PATH_ROUTED_YOUTUBE_CONNECTION_ID_SET = new Set(PATH_ROUTED_YOUTUBE_CONNECTION_IDS)
@@ -274,7 +275,11 @@ export default function ToolsConnections() {
             ['Concierge — Do With You', 'Guided co-edit mode where creator and concierge shape the edit together.'],
             ['Concierge — Teach You', 'Training mode where concierge explains tools, workflow, and sequencing step by step.'],
             ['Concierge — Do It Himself', 'Autonomous mode where concierge executes the full edit path and returns deliverables.'],
+            ['Concierge — Critic Pass', 'Audit mode that flags weak hooks, pacing dead spots, clarity gaps, and retention risks with a concrete fix plan.'],
             ['Concierge packets/effects', 'Concierge can apply editor packets and effects chains as part of render instructions.'],
+            ['Music mode — Note by note', 'Compose melody and rhythm one note at a time for precise control.'],
+            ['Music mode — Lick by lick', 'Build parts in musical phrases and riffs for faster iteration.'],
+            ['Music mode — Full arrangement', 'Concierge orchestrates drums, guitar, keys, bass, and stems into a full arrangement.'],
             ['Receive previews', 'Receive preview renders back into the asset library.'],
             ['Receive exports', 'Final exports land as assets and can enter the publishing queue.'],
           ].map(([label, desc]) => (
