@@ -1,6 +1,26 @@
 -- Add channel-level YouTube publishing connection rows.
 -- These rows allow Headquarters to track auth/health per channel.
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.connections
+    WHERE id IN (
+      'youtube',
+      'youtube-moonshadow',
+      'youtube-kimmy',
+      'youtube-comedy-studio',
+      'youtube-story-culture-studio',
+      'youtube-idea-lab'
+    )
+      AND category <> 'publishing'
+  ) THEN
+    RAISE EXCEPTION 'YouTube connection IDs already exist in a non-publishing category; resolve those conflicting rows before applying this migration.';
+  END IF;
+END;
+$$;
+
 INSERT INTO connections (id, name, category, status, detail) VALUES
   ('youtube', 'YouTube (Shared Publisher)', 'publishing', 'needs-auth', 'Shared YouTube publisher integration boundary. Configure channel-level credentials and verification before enabling publish.'),
   ('youtube-moonshadow', 'YouTube — Moonshadow', 'publishing', 'needs-auth', 'OAuth/API credentials required for the Moonshadow channel publisher.'),
