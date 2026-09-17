@@ -22,11 +22,19 @@ const MODULE_MACHINE_ALIASES: Record<string, string[]> = {
   publishing: ['publishing', 'publisher'],
 }
 
+const PATH_ROUTED_YOUTUBE_CONNECTION_IDS = new Set([
+  'youtube',
+  'youtube-moonshadow',
+  'youtube-kimmy',
+  'youtube-comedy-studio',
+  'youtube-story-culture-studio',
+  'youtube-idea-lab',
+])
+
 function isYouTubePublishingConnection(connection: Connection) {
   return (
     connection.category === 'publishing'
-    && (connection.id === 'youtube' || connection.id.startsWith('youtube-'))
-    && (connection.detail?.includes('Path-proven publisher route via Moonshadow Path') ?? false)
+    && PATH_ROUTED_YOUTUBE_CONNECTION_IDS.has(connection.id)
   )
 }
 

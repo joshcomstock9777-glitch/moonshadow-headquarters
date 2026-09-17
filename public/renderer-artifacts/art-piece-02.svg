@@ -1,4 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920" role="img" aria-labelledby="art02-title art02-desc">
+  <title id="art02-title">Moonshadow Renderer Test 02</title>
+  <desc id="art02-desc">A vertical reel-style frame with a bright explosion core and arc trail representing explosion packet output.</desc>
   <defs>
     <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#020617"/>

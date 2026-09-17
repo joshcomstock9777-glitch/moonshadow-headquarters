@@ -1,4 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="art01-title art01-desc">
+  <title id="art01-title">Moonshadow Renderer Test 01</title>
+  <desc id="art01-desc">A dark cinematic frame with a red flare and motion streaks representing blood and gore packet composite output.</desc>
   <defs>
     <radialGradient id="bg" cx="50%" cy="50%" r="60%">
       <stop offset="0%" stop-color="#701a1a"/>
