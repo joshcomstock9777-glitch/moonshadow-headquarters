@@ -13,7 +13,9 @@ SET
   name = EXCLUDED.name,
   category = EXCLUDED.category,
   status = CASE
-    WHEN connections.category = 'publishing' THEN connections.status
+    WHEN connections.category = 'publishing'
+      AND connections.status IN ('connected', 'ready-to-connect', 'development')
+    THEN connections.status
     ELSE EXCLUDED.status
   END,
   detail = CASE
