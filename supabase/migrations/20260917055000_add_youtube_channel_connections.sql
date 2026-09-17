@@ -16,4 +16,7 @@ SET
   detail = CASE
     WHEN connections.detail IS NULL OR btrim(connections.detail) = '' THEN EXCLUDED.detail
     ELSE connections.detail
-  END;
+  END
+WHERE
+  connections.category = 'publishing'
+  AND connections.name ILIKE '%YouTube%';
