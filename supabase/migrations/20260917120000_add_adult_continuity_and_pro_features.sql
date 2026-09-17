@@ -351,6 +351,12 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS jobs_stage_evidence ON public.jobs;
+CREATE TRIGGER jobs_stage_evidence
+BEFORE INSERT OR UPDATE OF stage ON public.jobs
+FOR EACH ROW
+EXECUTE FUNCTION public.enforce_job_stage_evidence();
+
 INSERT INTO public.house_strategy_profiles (
   id,
   label,

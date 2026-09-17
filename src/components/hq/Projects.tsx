@@ -500,6 +500,7 @@ function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: strin
   async function saveReview() {
     setSaving(true)
     setError(null)
+    const effectivePublishReady = publishReady && thresholdsMet
     const { error: saveError } = await supabase
       .from('render_quality_reviews')
       .upsert(
@@ -512,7 +513,7 @@ function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: strin
           retention_prediction_score: retentionPredictionScore,
           craft_score: craftScore,
           notes: notes.trim() || null,
-          publish_ready: publishReady,
+          publish_ready: effectivePublishReady,
         },
         { onConflict: 'job_id' },
       )
@@ -554,8 +555,9 @@ function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: strin
               type="checkbox"
               checked={publishReady}
               onChange={(event) => setPublishReady(event.target.checked)}
+              disabled={!thresholdsMet}
             />
-            Mark publish-ready after quality review
+            Mark publish-ready after quality review (enabled only when thresholds pass)
           </label>
         </div>
       )}
@@ -608,7 +610,8 @@ function RightsCompliancePanel({ job, projectId }: { job: Job; projectId: string
   const [notes, setNotes] = useState('')
   const [violationsText, setViolationsText] = useState('')
 
-  const allChecksPassed = musicRightsOk && imageRightsOk && clipRightsOk && policySafetyOk && publishAllowed
+  const prerequisitesMet = musicRightsOk && imageRightsOk && clipRightsOk && policySafetyOk
+  const allChecksPassed = prerequisitesMet && publishAllowed
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -645,6 +648,7 @@ function RightsCompliancePanel({ job, projectId }: { job: Job; projectId: string
   async function saveReview() {
     setSaving(true)
     setError(null)
+    const effectivePublishAllowed = prerequisitesMet && publishAllowed
     const violations = violationsText
       .split(',')
       .map((entry) => entry.trim())
@@ -660,7 +664,7 @@ function RightsCompliancePanel({ job, projectId }: { job: Job; projectId: string
           image_rights_ok: imageRightsOk,
           clip_rights_ok: clipRightsOk,
           policy_safety_ok: policySafetyOk,
-          publish_allowed: publishAllowed,
+          publish_allowed: effectivePublishAllowed,
           notes: notes.trim() || null,
           violations,
         },
@@ -683,7 +687,7 @@ function RightsCompliancePanel({ job, projectId }: { job: Job; projectId: string
           <label className="flex items-center gap-2"><input type="checkbox" checked={imageRightsOk} onChange={(event) => setImageRightsOk(event.target.checked)} /> Image rights verified</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={clipRightsOk} onChange={(event) => setClipRightsOk(event.target.checked)} /> Clip rights verified</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={policySafetyOk} onChange={(event) => setPolicySafetyOk(event.target.checked)} /> Policy safety verified</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={publishAllowed} onChange={(event) => setPublishAllowed(event.target.checked)} /> Publish allowed</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={publishAllowed} onChange={(event) => setPublishAllowed(event.target.checked)} disabled={!prerequisitesMet} /> Publish allowed (enabled only after all checks pass)</label>
           <div>
             <label className="field-label">Violations (comma separated)</label>
             <input value={violationsText} onChange={(event) => setViolationsText(event.target.value)} className="field-input" placeholder="missing license, policy mismatch" />
@@ -716,31 +720,43 @@ function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }
   const [publishReady, setPublishReady] = useState(false)
   const [issuesText, setIssuesText] = useState('')
   const [fixPlan, setFixPlan] = useState('')
+  const [bibleOptions, setBibleOptions] = useState<string[]>([])
 
   const gateReady = publishReady && continuityScore >= 85
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const { data, error: loadError } = await supabase
-      .from('continuity_checks')
-      .select('*')
-      .eq('job_id', job.id)
-      .maybeSingle()
+    const [checkResult, bibleResult] = await Promise.all([
+      supabase
+        .from('continuity_checks')
+        .select('*')
+        .eq('job_id', job.id)
+        .maybeSingle(),
+      supabase
+        .from('continuity_bibles')
+        .select('id')
+        .order('id', { ascending: true }),
+    ])
 
-    if (loadError) {
-      setError(loadError.message)
+    if (checkResult.error || bibleResult.error) {
+      setError(checkResult.error?.message || bibleResult.error?.message || 'Continuity evidence unavailable.')
       setLoading(false)
       return
     }
 
-    const review = data as ContinuityCheck | null
+    const options = (bibleResult.data ?? []).map((row) => String(row.id))
+    setBibleOptions(options)
+
+    const review = checkResult.data as ContinuityCheck | null
     if (review) {
       setContinuityBibleId(review.continuity_bible_id)
       setContinuityScore(review.continuity_score)
       setPublishReady(review.publish_ready)
       setIssuesText((review.issues ?? []).join(', '))
       setFixPlan(review.fix_plan ?? '')
+    } else if (options.length > 0) {
+      setContinuityBibleId(options[0])
     }
     setLoading(false)
   }, [job.id])
@@ -752,6 +768,8 @@ function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }
   async function saveContinuity() {
     setSaving(true)
     setError(null)
+    const effectivePublishReady = publishReady && continuityScore >= 85
+    const selectedBibleId = bibleOptions.includes(continuityBibleId) ? continuityBibleId : (bibleOptions[0] ?? 'moonshadow-master-bible')
     const issues = issuesText
       .split(',')
       .map((entry) => entry.trim())
@@ -763,11 +781,11 @@ function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }
         {
           project_id: projectId,
           job_id: job.id,
-          continuity_bible_id: continuityBibleId.trim() || 'moonshadow-master-bible',
+          continuity_bible_id: selectedBibleId,
           continuity_score: continuityScore,
           issues,
           fix_plan: fixPlan.trim() || null,
-          publish_ready: publishReady,
+          publish_ready: effectivePublishReady,
         },
         { onConflict: 'job_id' },
       )
@@ -786,12 +804,17 @@ function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="field-label">Continuity bible id</label>
-            <input value={continuityBibleId} onChange={(event) => setContinuityBibleId(event.target.value)} className="field-input" placeholder="moonshadow-master-bible" />
+            <select value={continuityBibleId} onChange={(event) => setContinuityBibleId(event.target.value)} className="field-input">
+              {bibleOptions.length === 0 && <option value="moonshadow-master-bible">moonshadow-master-bible</option>}
+              {bibleOptions.map((bibleId) => (
+                <option key={bibleId} value={bibleId}>{bibleId}</option>
+              ))}
+            </select>
           </div>
           <ScoreField label="Continuity score" value={continuityScore} onChange={setContinuityScore} />
           <label className="flex items-end gap-2 pb-2 text-sm text-ink-200">
-            <input type="checkbox" checked={publishReady} onChange={(event) => setPublishReady(event.target.checked)} />
-            Mark continuity publish-ready
+            <input type="checkbox" checked={publishReady} onChange={(event) => setPublishReady(event.target.checked)} disabled={continuityScore < 85} />
+            Mark continuity publish-ready (requires score ≥ 85)
           </label>
           <div className="sm:col-span-2">
             <label className="field-label">Continuity issues (comma separated)</label>
