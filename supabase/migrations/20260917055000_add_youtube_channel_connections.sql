@@ -12,5 +12,5 @@ ON CONFLICT (id) DO UPDATE
 SET
   name = EXCLUDED.name,
   category = EXCLUDED.category,
-  status = EXCLUDED.status,
-  detail = EXCLUDED.detail;
+  status = connections.status,
+  detail = connections.detail;
