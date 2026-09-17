@@ -351,6 +351,8 @@ BEGIN
 END;
 $$;
 
+GRANT EXECUTE ON FUNCTION public.get_command_center_roi_queue(integer) TO authenticated;
+
 INSERT INTO public.plugin_providers (
   id, label, provider_kind, auth_env_ref, status, supports_tasks, is_free_tier, estimated_cost_rank, metadata
 )
