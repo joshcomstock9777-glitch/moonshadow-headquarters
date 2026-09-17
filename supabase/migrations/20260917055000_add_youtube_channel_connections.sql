@@ -14,7 +14,7 @@ BEGIN
       'youtube-story-culture-studio',
       'youtube-idea-lab'
     )
-      AND category <> 'publishing'
+      AND category IS DISTINCT FROM 'publishing'
   ) THEN
     RAISE EXCEPTION 'YouTube connection IDs already exist in a non-publishing category; resolve those conflicting rows before applying this migration.';
   END IF;
@@ -45,5 +45,4 @@ SET
       AND btrim(connections.detail) <> ''
     THEN connections.detail
     ELSE EXCLUDED.detail
-  END
-WHERE connections.category = 'publishing';
+  END;

@@ -8,10 +8,6 @@
 
 UPDATE public.connections
 SET
-  status = CASE
-    WHEN status = 'needs-auth' THEN 'ready-to-connect'
-    ELSE status
-  END,
   detail = CASE
     WHEN detail IS NULL OR btrim(detail) = '' THEN
       'Path-proven publisher route via Moonshadow Path is configured. Channel OAuth/API credentials must be set server-side before trusted publish confirmation can promote this connection to connected.'
