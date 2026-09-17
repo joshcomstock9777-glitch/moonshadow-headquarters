@@ -13,4 +13,4 @@ SET
   name = EXCLUDED.name,
   category = EXCLUDED.category,
   status = connections.status,
-  detail = connections.detail;
+  detail = EXCLUDED.detail;
