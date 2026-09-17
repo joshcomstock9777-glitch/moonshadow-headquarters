@@ -91,10 +91,7 @@ export default function CommandCenter() {
         .order('updated_at', { ascending: false })
         .limit(40),
       supabase
-        .from('command_center_roi_queue')
-        .select('house_label,highest_roi_next_action,blocked_jobs')
-        .order('monetization_priority', { ascending: true })
-        .limit(6),
+        .rpc('get_command_center_roi_queue', { p_limit: 6 }),
       supabase
         .from('hook_labs')
         .select('id,winning_variant')

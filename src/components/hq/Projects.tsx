@@ -523,6 +523,8 @@ function RenderQualityGatePanel({ job, projectId }: { job: Job; projectId: strin
       setError(saveError.message)
       return
     }
+
+    setPublishReady(effectivePublishReady)
   }
 
   return (
@@ -672,7 +674,12 @@ function RightsCompliancePanel({ job, projectId }: { job: Job; projectId: string
       )
 
     setSaving(false)
-    if (saveError) setError(saveError.message)
+    if (saveError) {
+      setError(saveError.message)
+      return
+    }
+
+    setPublishAllowed(effectivePublishAllowed)
   }
 
   return (
@@ -791,7 +798,13 @@ function ContinuityGatePanel({ job, projectId }: { job: Job; projectId: string }
       )
 
     setSaving(false)
-    if (saveError) setError(saveError.message)
+    if (saveError) {
+      setError(saveError.message)
+      return
+    }
+
+    setContinuityBibleId(selectedBibleId)
+    setPublishReady(effectivePublishReady)
   }
 
   return (

@@ -285,27 +285,71 @@ CREATE TRIGGER rights_compliance_reviews_flag_failed
 AFTER INSERT OR UPDATE ON public.rights_compliance_reviews
 FOR EACH ROW EXECUTE FUNCTION public.flag_failed_rights_compliance_review();
 
-CREATE OR REPLACE VIEW public.command_center_roi_queue AS
-SELECT
-  h.id AS house_id,
-  h.label AS house_label,
-  h.monetization_priority,
-  h.rollout_phase,
-  count(j.id) FILTER (WHERE j.stage <> 'done')::integer AS active_jobs,
-  count(j.id) FILTER (WHERE j.error IS NOT NULL AND btrim(j.error) <> '')::integer AS blocked_jobs,
-  coalesce(avg(r.ctr_pct), 0)::numeric(5,2) AS avg_ctr_pct,
-  coalesce(avg(r.rpm_usd), 0)::numeric(10,4) AS avg_rpm_usd,
-  coalesce(avg(r.conversion_rate_pct), 0)::numeric(5,2) AS avg_conversion_rate_pct,
-  format(
-    'Prioritize %s next: run free-first queue, clear blocked items, and push highest-retention cut.',
-    h.label
-  ) AS highest_roi_next_action
-FROM public.house_strategy_profiles h
-LEFT JOIN public.projects p ON p.type = h.id
-LEFT JOIN public.jobs j ON j.project_id = p.id
-LEFT JOIN public.retention_conversion_signals r ON r.project_id = p.id
-GROUP BY h.id, h.label, h.monetization_priority, h.rollout_phase
-ORDER BY h.monetization_priority ASC;
+DROP VIEW IF EXISTS public.command_center_roi_queue;
+
+CREATE OR REPLACE FUNCTION public.get_command_center_roi_queue(p_limit integer DEFAULT 6)
+RETURNS TABLE (
+  house_id text,
+  house_label text,
+  monetization_priority integer,
+  rollout_phase integer,
+  active_jobs integer,
+  blocked_jobs integer,
+  avg_ctr_pct numeric(5,2),
+  avg_rpm_usd numeric(10,4),
+  avg_conversion_rate_pct numeric(5,2),
+  highest_roi_next_action text
+)
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.role() = 'anon' OR NOT public.has_headquarters_access() THEN
+    RAISE EXCEPTION 'Headquarters access required for ROI queue';
+  END IF;
+
+  RETURN QUERY
+  WITH house_jobs AS (
+    SELECT
+      p.type AS house_id,
+      count(j.id) FILTER (WHERE j.stage <> 'done')::integer AS active_jobs,
+      count(j.id) FILTER (WHERE j.error IS NOT NULL AND btrim(j.error) <> '')::integer AS blocked_jobs
+    FROM public.projects p
+    LEFT JOIN public.jobs j ON j.project_id = p.id
+    GROUP BY p.type
+  ),
+  house_retention AS (
+    SELECT
+      p.type AS house_id,
+      coalesce(avg(r.ctr_pct), 0)::numeric(5,2) AS avg_ctr_pct,
+      coalesce(avg(r.rpm_usd), 0)::numeric(10,4) AS avg_rpm_usd,
+      coalesce(avg(r.conversion_rate_pct), 0)::numeric(5,2) AS avg_conversion_rate_pct
+    FROM public.projects p
+    LEFT JOIN public.retention_conversion_signals r ON r.project_id = p.id
+    GROUP BY p.type
+  )
+  SELECT
+    h.id AS house_id,
+    h.label AS house_label,
+    h.monetization_priority,
+    h.rollout_phase,
+    coalesce(j.active_jobs, 0) AS active_jobs,
+    coalesce(j.blocked_jobs, 0) AS blocked_jobs,
+    coalesce(r.avg_ctr_pct, 0)::numeric(5,2) AS avg_ctr_pct,
+    coalesce(r.avg_rpm_usd, 0)::numeric(10,4) AS avg_rpm_usd,
+    coalesce(r.avg_conversion_rate_pct, 0)::numeric(5,2) AS avg_conversion_rate_pct,
+    format(
+      'Prioritize %s next: run free-first queue, clear blocked items, and push highest-retention cut.',
+      h.label
+    ) AS highest_roi_next_action
+  FROM public.house_strategy_profiles h
+  LEFT JOIN house_jobs j ON j.house_id = h.id
+  LEFT JOIN house_retention r ON r.house_id = h.id
+  ORDER BY h.monetization_priority ASC
+  LIMIT GREATEST(coalesce(p_limit, 6), 1);
+END;
+$$;
 
 INSERT INTO public.plugin_providers (
   id, label, provider_kind, auth_env_ref, status, supports_tasks, is_free_tier, estimated_cost_rank, metadata
@@ -377,5 +421,5 @@ SET
     ELSE EXCLUDED.detail
   END;
 
-COMMENT ON VIEW public.command_center_roi_queue IS
+COMMENT ON FUNCTION public.get_command_center_roi_queue(integer) IS
   'ROI-prioritized per-house queue for Command Center 2.0, combining active workload, block rate, and retention/conversion performance.';
