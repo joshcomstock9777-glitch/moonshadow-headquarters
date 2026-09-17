@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import type { Connection } from '../../lib/hqTypes'
 import { loadDockControlPlane, type DockMachineView } from '../../lib/dockControlPlane'
+import { PATH_ROUTED_SOCIAL_PROMOTION_IDS, PATH_ROUTED_YOUTUBE_CONNECTION_IDS } from '../../lib/publishingConnections'
 import {
   MODULES,
   MODULE_STATUS_STYLES,
@@ -22,40 +23,20 @@ const MODULE_MACHINE_ALIASES: Record<string, string[]> = {
   publishing: ['publishing', 'publisher'],
 }
 
-const PATH_ROUTED_YOUTUBE_CONNECTION_IDS = new Set([
-  'youtube',
-  'youtube-moonshadow',
-  'youtube-kimmy',
-  'youtube-comedy-studio',
-  'youtube-story-culture-studio',
-  'youtube-idea-lab',
-  'youtube-comedy-house',
-  'youtube-horror-house',
-  'youtube-technology-house',
-  'youtube-financial-house',
-  'youtube-kids-house',
-  'youtube-music-video-house',
-])
-
-const PATH_ROUTED_SOCIAL_PROMOTION_IDS = new Set([
-  'social-promotion-hub',
-  'instagram-comedy-house', 'instagram-horror-house', 'instagram-technology-house', 'instagram-financial-house', 'instagram-kids-house', 'instagram-music-video-house',
-  'facebook-comedy-house', 'facebook-horror-house', 'facebook-technology-house', 'facebook-financial-house', 'facebook-kids-house', 'facebook-music-video-house',
-  'tiktok-comedy-house', 'tiktok-horror-house', 'tiktok-technology-house', 'tiktok-financial-house', 'tiktok-kids-house', 'tiktok-music-video-house',
-  'x-comedy-house', 'x-horror-house', 'x-technology-house', 'x-financial-house', 'x-kids-house', 'x-music-video-house',
-])
+const PATH_ROUTED_YOUTUBE_CONNECTION_ID_SET = new Set(PATH_ROUTED_YOUTUBE_CONNECTION_IDS)
+const PATH_ROUTED_SOCIAL_PROMOTION_ID_SET = new Set(PATH_ROUTED_SOCIAL_PROMOTION_IDS)
 
 function isYouTubePublishingConnection(connection: Connection) {
   return (
     connection.category === 'publishing'
-    && PATH_ROUTED_YOUTUBE_CONNECTION_IDS.has(connection.id)
+    && PATH_ROUTED_YOUTUBE_CONNECTION_ID_SET.has(connection.id as (typeof PATH_ROUTED_YOUTUBE_CONNECTION_IDS)[number])
   )
 }
 
 function isSocialPromotionConnection(connection: Connection) {
   return (
     connection.category === 'publishing'
-    && PATH_ROUTED_SOCIAL_PROMOTION_IDS.has(connection.id)
+    && PATH_ROUTED_SOCIAL_PROMOTION_ID_SET.has(connection.id as (typeof PATH_ROUTED_SOCIAL_PROMOTION_IDS)[number])
   )
 }
 

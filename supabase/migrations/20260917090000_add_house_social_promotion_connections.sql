@@ -20,6 +20,27 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'House publishing connection IDs already exist under a non-publishing category; resolve conflicts before applying this migration.';
   END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.connections
+    WHERE id IN (
+      'social-promotion-hub',
+      'youtube-comedy-house', 'youtube-horror-house', 'youtube-technology-house', 'youtube-financial-house', 'youtube-kids-house', 'youtube-music-video-house',
+      'instagram-comedy-house', 'instagram-horror-house', 'instagram-technology-house', 'instagram-financial-house', 'instagram-kids-house', 'instagram-music-video-house',
+      'facebook-comedy-house', 'facebook-horror-house', 'facebook-technology-house', 'facebook-financial-house', 'facebook-kids-house', 'facebook-music-video-house',
+      'tiktok-comedy-house', 'tiktok-horror-house', 'tiktok-technology-house', 'tiktok-financial-house', 'tiktok-kids-house', 'tiktok-music-video-house',
+      'x-comedy-house', 'x-horror-house', 'x-technology-house', 'x-financial-house', 'x-kids-house', 'x-music-video-house'
+    )
+      AND category = 'publishing'
+      AND (
+        (id = 'social-promotion-hub' AND name NOT ILIKE '%Social Promotion Hub%')
+        OR
+        (id <> 'social-promotion-hub' AND name NOT ILIKE '%House%')
+      )
+  ) THEN
+    RAISE EXCEPTION 'A publishing row with a house social connection ID has a conflicting name; resolve the row before applying this migration.';
+  END IF;
 END;
 $$;
 
