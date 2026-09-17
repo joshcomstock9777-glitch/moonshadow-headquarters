@@ -18,6 +18,23 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'YouTube connection IDs already exist in a non-publishing category; resolve those conflicting rows before applying this migration.';
   END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.connections
+    WHERE id IN (
+      'youtube',
+      'youtube-moonshadow',
+      'youtube-kimmy',
+      'youtube-comedy-studio',
+      'youtube-story-culture-studio',
+      'youtube-idea-lab'
+    )
+      AND category = 'publishing'
+      AND name NOT ILIKE '%YouTube%'
+  ) THEN
+    RAISE EXCEPTION 'A publishing connection with a YouTube channel ID has a non-YouTube name; resolve the conflicting row before applying this migration.';
+  END IF;
 END;
 $$;
 
