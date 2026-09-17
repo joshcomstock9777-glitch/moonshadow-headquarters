@@ -213,6 +213,10 @@ function laneToType(lane: string): string {
     Story: 'story',
     'Channel Piece': 'channel-piece',
     'Social Clip': 'short-film',
+    'Comedy House': 'comedy-house',
+    'Horror House': 'horror-house',
+    'Technology House': 'technology-house',
+    'Financial House': 'financial-house',
   }
   return map[lane] ?? ''
 }

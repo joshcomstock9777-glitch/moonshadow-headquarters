@@ -240,6 +240,10 @@ export const PROJECT_TYPES = [
   'song',
   'article',
   'channel-piece',
+  'comedy-house',
+  'horror-house',
+  'technology-house',
+  'financial-house',
 ] as const
 
 export const PROJECT_TYPE_LABELS: Record<string, string> = {
@@ -250,6 +254,10 @@ export const PROJECT_TYPE_LABELS: Record<string, string> = {
   song: 'Song',
   article: 'Article',
   'channel-piece': 'Channel Piece',
+  'comedy-house': 'Comedy House',
+  'horror-house': 'Horror House',
+  'technology-house': 'Technology House',
+  'financial-house': 'Financial House',
 }
 
 export const PROJECT_STATUSES = ['active', 'paused', 'archived'] as const

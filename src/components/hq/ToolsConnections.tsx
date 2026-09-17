@@ -29,6 +29,10 @@ const PATH_ROUTED_YOUTUBE_CONNECTION_IDS = new Set([
   'youtube-comedy-studio',
   'youtube-story-culture-studio',
   'youtube-idea-lab',
+  'youtube-comedy-house',
+  'youtube-horror-house',
+  'youtube-technology-house',
+  'youtube-financial-house',
 ])
 
 function isYouTubePublishingConnection(connection: Connection) {
