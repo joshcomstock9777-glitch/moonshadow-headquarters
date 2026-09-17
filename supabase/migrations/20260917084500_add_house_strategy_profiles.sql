@@ -167,6 +167,5 @@ FROM (
     ('Kids House', 34),
     ('Music Video House', 35)
 ) AS lanes(lane_name, lane_position)
-WHERE NOT EXISTS (
-  SELECT 1 FROM public.factory_lanes existing WHERE existing.name = lanes.lane_name
-);
+ON CONFLICT (name) DO UPDATE
+SET position = EXCLUDED.position;
