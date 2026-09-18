@@ -94,7 +94,7 @@ Deno.serve(async (request) => {
     }
 
     const { data: job, error: jobError } = await supabase
-      .from('jobs')
+      .from('dispatch_jobs')
       .insert({
         machine_id: machineId,
         job_type: jobType,
@@ -123,7 +123,7 @@ Deno.serve(async (request) => {
 
     if (handoffError || !handoff) {
       console.error('Dock handoff insert failed:', handoffError?.message || 'no row returned')
-      const { error: cleanupError } = await supabase.from('jobs').delete().eq('id', job.id).eq('status', 'queued')
+      const { error: cleanupError } = await supabase.from('dispatch_jobs').delete().eq('id', job.id).eq('status', 'queued')
       if (cleanupError) console.error('Dock orphan cleanup failed:', cleanupError.message)
       return Response.json({ error: 'Dock handoff write failed' }, { status: 503 })
     }
