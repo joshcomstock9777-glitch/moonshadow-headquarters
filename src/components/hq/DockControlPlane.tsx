@@ -17,7 +17,7 @@ type State =
     }
 
 function statusClass(status: string): string {
-  if (status === 'online' || status === 'PASS') return 'text-toxic-300'
+  if (status === 'connected' || status === 'PASS') return 'text-toxic-300'
   if (status === 'busy' || status === 'NOT_YET_CONNECTED' || status === 'BLOCKED') return 'text-amber-300'
   if (status === 'error' || status === 'FAIL') return 'text-blood-300'
   return 'text-ink-400'
@@ -71,7 +71,7 @@ export default function DockControlPlane() {
     )
   }
 
-  const online = state.machines.filter((machine) => machine.status === 'online').length
+  const connected = state.machines.filter((machine) => machine.status === 'connected').length
   const passingTests = state.tests.filter((test) => test.result === 'PASS').length
 
   return (
@@ -92,7 +92,7 @@ export default function DockControlPlane() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat label="Registered machines" value={state.machines.length} />
-        <Stat label="Online machines" value={online} />
+        <Stat label="Connected machines" value={connected} />
         <Stat label="Passing tests" value={passingTests} />
       </div>
 

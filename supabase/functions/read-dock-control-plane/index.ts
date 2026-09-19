@@ -61,20 +61,20 @@ Deno.serve(async (request) => {
       return Response.json({ error: 'Headquarters owner/operator role required' }, { status: 403 })
     }
 
-    const [machinesResult, handoffsResult, testsResult, evidenceResult, healthResult] = await Promise.all([
-      supabase.from('machines').select('*').order('created_at', { ascending: true }),
+    const [machinesResult, handoffsResult, testsResult, evidenceResult, dockTestsResult] = await Promise.all([
+      supabase.from('dock_machines').select('*').order('created_at', { ascending: true }),
       supabase.from('handoffs').select('*').order('created_at', { ascending: false }).limit(20),
       supabase.from('commissioning_tests').select('*').order('run_at', { ascending: false }).limit(50),
       supabase.from('evidence').select('*').eq('ref_type', 'commissioning_test').order('created_at', { ascending: false }).limit(100),
-      supabase.from('machine_health').select('*').order('checked_at', { ascending: false }).limit(100),
+      supabase.from('dock_connection_tests').select('*').order('created_at', { ascending: false }).limit(100),
     ])
 
     const failures = [
-      machinesResult.error ? `machines: ${machinesResult.error.message}` : null,
+      machinesResult.error ? `dock_machines: ${machinesResult.error.message}` : null,
       handoffsResult.error ? `handoffs: ${handoffsResult.error.message}` : null,
       testsResult.error ? `commissioning_tests: ${testsResult.error.message}` : null,
       evidenceResult.error ? `evidence: ${evidenceResult.error.message}` : null,
-      healthResult.error ? `machine_health: ${healthResult.error.message}` : null,
+      dockTestsResult.error ? `dock_connection_tests: ${dockTestsResult.error.message}` : null,
     ].filter((failure): failure is string => failure !== null)
 
     if (failures.length > 0) {
@@ -82,11 +82,11 @@ Deno.serve(async (request) => {
       return Response.json({ error: 'Live Dock evidence unavailable' }, { status: 503 })
     }
 
-    const latestHealth = new Map<string, JsonRecord>()
-    for (const raw of healthResult.data ?? []) {
+    const latestTest = new Map<string, JsonRecord>()
+    for (const raw of dockTestsResult.data ?? []) {
       const row = record(raw)
       const machineId = text(row.machine_id)
-      if (machineId && !latestHealth.has(machineId)) latestHealth.set(machineId, row)
+      if (machineId && !latestTest.has(machineId)) latestTest.set(machineId, row)
     }
 
     const evidenceByTest = new Map<string, JsonRecord[]>()
@@ -101,16 +101,16 @@ Deno.serve(async (request) => {
 
     const machines = (machinesResult.data ?? []).map((raw) => {
       const row = record(raw)
-      const health = latestHealth.get(text(row.id))
+      const test = latestTest.get(text(row.id))
       return {
         id: text(row.id),
         name: text(row.name, 'Unnamed machine'),
         machineType: text(row.machine_type, 'unknown'),
-        status: text(row.status, 'offline'),
+        status: text(row.connection_status, 'unknown'),
         capabilities: stringList(row.capabilities),
-        lastHeartbeat: typeof row.last_heartbeat === 'string' ? row.last_heartbeat : null,
-        healthStatus: health ? text(health.status, 'unknown') : 'not-tested',
-        healthLatencyMs: health ? numberOrNull(health.latency_ms) : null,
+        lastHeartbeat: typeof row.last_connected_at === 'string' ? row.last_connected_at : null,
+        healthStatus: text(row.health_status, 'unknown'),
+        healthLatencyMs: test ? numberOrNull(test.latency_ms) : null,
         updatedAt: text(row.updated_at, text(row.created_at)),
       }
     })
