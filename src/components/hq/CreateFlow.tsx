@@ -9,6 +9,8 @@ import {
 } from '../../lib/hq'
 import { navigate } from '../../lib/router'
 import { requestRoundtableReply } from '../../lib/pathRoundtable'
+import IntakeBar, { emptyIntakeSelection, type IntakeSelection } from './IntakeBar'
+import { persistIntakeAttachments } from '../../lib/intakeAttachments'
 
 const TONES = [
   'Slow-building dread',
@@ -55,6 +57,7 @@ export default function CreateFlow() {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<CreateResult | null>(null)
+  const [intake, setIntake] = useState<IntakeSelection>(emptyIntakeSelection)
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -94,6 +97,28 @@ export default function CreateFlow() {
         .single()
       if (jobErr) throw jobErr
 
+      let routedBrief = creatorBrief
+      if (intake.files.length > 0 || intake.existingAssets.length > 0) {
+        try {
+          const persisted = await persistIntakeAttachments({
+            files: intake.files,
+            existingAssets: intake.existingAssets,
+            projectId: projData.id,
+            jobId: jobData.id,
+            context: 'create',
+          })
+          routedBrief += persisted.contextBlock
+        } catch (attachmentError) {
+          setResult({
+            project: projData,
+            job: jobData,
+            kickoff: null,
+            kickoffError: `Job created, but its attachments could not be preserved: ${attachmentError instanceof Error ? attachmentError.message : 'upload failed'}`,
+          })
+          return
+        }
+      }
+
       await logActivity(
         projData.id,
         jobData.id,
@@ -108,7 +133,7 @@ export default function CreateFlow() {
         .insert({
           project_id: projData.id,
           role: 'creator',
-          message: creatorBrief,
+          message: routedBrief,
           addressed_to: 'herman',
           kind: 'message',
         })
@@ -123,7 +148,7 @@ export default function CreateFlow() {
       }
 
       try {
-        const response = await requestRoundtableReply('herman', creatorBrief)
+        const response = await requestRoundtableReply('herman', routedBrief)
         const { data: insertedReply, error: replyInsertError } = await supabase
           .from('roundtable_messages')
           .insert({
@@ -307,6 +332,12 @@ export default function CreateFlow() {
             className="field-textarea"
             placeholder="Make me a creepy 20-second short about something moving behind a bedroom door."
             rows={4}
+          />
+          <IntakeBar
+            value={intake}
+            onChange={setIntake}
+            onAppendText={(text) => setIdea((current) => current ? `${current}\n${text}` : text)}
+            disabled={creating}
           />
         </div>
 
