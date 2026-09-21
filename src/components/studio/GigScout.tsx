@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import type { Gig } from '../../lib/types'
+import WorkspaceIntake from '../shared/WorkspaceIntake'
+import type { WorkspaceAttachment } from '../../lib/workspaceAttachments'
 import {
   GENRES,
   GENRE_LABELS,
@@ -31,6 +33,7 @@ export default function GigScout() {
   const [saving, setSaving] = useState(false)
   const [filterStatus, setFilterStatus] = useState<'all' | GigStatus>('all')
   const [filterGenre, setFilterGenre] = useState<'all' | Genre>('all')
+  const [attachments, setAttachments] = useState<WorkspaceAttachment[]>([])
 
   useEffect(() => {
     void load()
@@ -83,6 +86,7 @@ export default function GigScout() {
       return
     }
     setForm(emptyForm)
+    setAttachments([])
     await load()
   }
 
@@ -219,6 +223,13 @@ export default function GigScout() {
             className="field-textarea"
             placeholder="Paste the full posting or your notes on what they want."
           />
+          <div className="mt-3">
+            <WorkspaceIntake
+              attachments={attachments}
+              onChange={setAttachments}
+              onInsertText={(text) => setForm((current) => ({ ...current, brief: [current.brief, text].filter(Boolean).join(current.brief ? '\n' : '') }))}
+            />
+          </div>
         </div>
         <div>
           <label className="field-label">Private notes</label>

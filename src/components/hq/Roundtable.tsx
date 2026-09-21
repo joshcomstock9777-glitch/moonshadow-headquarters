@@ -4,6 +4,9 @@ import type { RoundtableMessage, Project } from '../../lib/hqTypes'
 import { ROLES, ROLE_META, type Role, logActivity, timeAgo } from '../../lib/hq'
 import { navigate } from '../../lib/router'
 import { requestRoundtableReply } from '../../lib/pathRoundtable'
+import WorkspaceIntake from '../shared/WorkspaceIntake'
+import MessageAttachments from '../shared/MessageAttachments'
+import type { WorkspaceAttachment } from '../../lib/workspaceAttachments'
 
 const ADDRESS_TARGETS = ['everybody', ...ROLES] as const
 type AddressTarget = (typeof ADDRESS_TARGETS)[number]
@@ -37,6 +40,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
   const [addressTo, setAddressTo] = useState<AddressTarget>('everybody')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [attachments, setAttachments] = useState<WorkspaceAttachment[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -86,6 +90,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
       message: creatorMessage,
       addressed_to: addressTo,
       kind: 'message',
+      attachments,
     })
     if (error) {
       setSendError(error.message)
@@ -105,6 +110,8 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
     }
 
     setInput('')
+    const sentAttachments = attachments
+    setAttachments([])
     void load()
 
     const addressed = addressTo === 'everybody' ? ROLES : [addressTo as Role]
@@ -112,7 +119,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
 
     for (const role of addressed) {
       try {
-        const response = await requestRoundtableReply(role, creatorMessage)
+        const response = await requestRoundtableReply(role, creatorMessage, sentAttachments)
         const { data: inserted, error: insertError } = await supabase
           .from('roundtable_messages')
           .insert({
@@ -126,6 +133,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
             path_correlation_id: response.correlationId,
             path_target: pathTargetForRole(role),
             path_evidence_verified: false,
+            attachments: [],
           })
           .select('id')
           .single()
@@ -283,6 +291,13 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
               />
               <button type="submit" disabled={sending || !input.trim()} className="btn-primary flex-none">Send</button>
             </div>
+            <WorkspaceIntake
+              projectId={selectedProject}
+              attachments={attachments}
+              onChange={setAttachments}
+              onInsertText={(text) => setInput((current) => [current, text].filter(Boolean).join(current ? '\n' : ''))}
+              compact
+            />
           </form>
         </div>
       </div>
@@ -320,6 +335,7 @@ function MessageBubble({ msg }: { msg: RoundtableMessage }) {
         </div>
         <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${isCreator ? 'rounded-tr-sm border border-blood-700/40 bg-blood-700/10 text-ink-100' : msg.kind === 'proposal' ? 'rounded-tl-sm border border-amber-700/40 bg-amber-700/5 text-ink-100' : 'rounded-tl-sm border border-ink-700 bg-ink-900/40 text-ink-200'}`}>
           {msg.message}
+          <MessageAttachments attachments={msg.attachments ?? []} />
           {msg.path_session_id && msg.path_correlation_id && (
             <div className={`mt-3 border-t border-ink-800 pt-2 font-mono text-[9px] uppercase tracking-[0.15em] ${msg.path_evidence_verified ? 'text-toxic-300' : 'text-amber-300'}`}>
               {msg.path_evidence_verified ? 'Verified Path evidence' : 'Path response recorded · backend verification pending'} · target {msg.path_target ?? 'unknown'} · session {msg.path_session_id.slice(0, 12)}… · correlation {msg.path_correlation_id.slice(0, 12)}…

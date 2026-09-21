@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import type { Project, Job } from '../../lib/hqTypes'
+import WorkspaceIntake from '../shared/WorkspaceIntake'
+import type { WorkspaceAttachment } from '../../lib/workspaceAttachments'
 import {
   PROJECT_STATUS_LABELS,
   PROJECT_TYPE_LABELS,
@@ -354,6 +356,7 @@ function JobPipeline({
 
       {/* Editable fields */}
       <PipelineField
+        projectId={projectId}
         label="Brief"
         value={job.brief}
         placeholder="The seed idea / what the client wants."
@@ -361,6 +364,7 @@ function JobPipeline({
         onSave={(v) => update({ brief: v })}
       />
       <PipelineField
+        projectId={projectId}
         label="Script"
         value={job.script}
         placeholder="The written script — from Kimmy or entered by hand."
@@ -369,6 +373,7 @@ function JobPipeline({
       />
       <div className="grid gap-5 sm:grid-cols-2">
         <PipelineField
+          projectId={projectId}
           label="Shots / scene list"
           value={job.shots}
           placeholder="Shot 1 — … Shot 2 — …"
@@ -376,6 +381,7 @@ function JobPipeline({
           onSave={(v) => update({ shots: v })}
         />
         <PipelineField
+          projectId={projectId}
           label="Narration / dialogue"
           value={job.narration}
           placeholder="Voiceover and dialogue lines."
@@ -383,6 +389,7 @@ function JobPipeline({
           onSave={(v) => update({ narration: v })}
         />
         <PipelineField
+          projectId={projectId}
           label="Music / audio"
           value={job.music}
           placeholder="Score, sound design, audio notes."
@@ -390,6 +397,7 @@ function JobPipeline({
           onSave={(v) => update({ music: v })}
         />
         <PipelineField
+          projectId={projectId}
           label="Captions"
           value={job.captions}
           placeholder="On-screen captions / subtitles."
@@ -398,6 +406,7 @@ function JobPipeline({
         />
       </div>
       <PipelineField
+        projectId={projectId}
         label="Edit notes"
         value={job.edit_notes}
         placeholder="Cut, pacing, transitions — notes for the editor."
@@ -405,6 +414,7 @@ function JobPipeline({
         onSave={(v) => update({ edit_notes: v })}
       />
       <PipelineField
+        projectId={projectId}
         label="Rights / license"
         value={job.rights}
         placeholder="Rights and license information."
@@ -416,12 +426,14 @@ function JobPipeline({
 }
 
 function PipelineField({
+  projectId,
   label,
   value,
   placeholder,
   rows,
   onSave,
 }: {
+  projectId: string
   label: string
   value: string | null
   placeholder: string
@@ -430,6 +442,7 @@ function PipelineField({
 }) {
   const [local, setLocal] = useState(value ?? '')
   const [dirty, setDirty] = useState(false)
+  const [attachments, setAttachments] = useState<WorkspaceAttachment[]>([])
 
   useEffect(() => {
     setLocal(value ?? '')
@@ -459,6 +472,18 @@ function PipelineField({
         rows={rows}
         className="field-textarea !min-h-0 text-base leading-relaxed"
       />
+      <div className="mt-2">
+        <WorkspaceIntake
+          projectId={projectId}
+          attachments={attachments}
+          onChange={setAttachments}
+          onInsertText={(text) => {
+            setLocal((current) => [current, text].filter(Boolean).join(current ? '\n' : ''))
+            setDirty(true)
+          }}
+          compact
+        />
+      </div>
     </div>
   )
 }

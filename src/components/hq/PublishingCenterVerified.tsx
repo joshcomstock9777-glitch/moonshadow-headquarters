@@ -8,6 +8,8 @@ import {
   logActivity,
   timeAgo,
 } from '../../lib/hq'
+import WorkspaceIntake from '../shared/WorkspaceIntake'
+import type { WorkspaceAttachment } from '../../lib/workspaceAttachments'
 
 export default function PublishingCenterVerified() {
   const [items, setItems] = useState<PublishItem[]>([])
@@ -293,6 +295,7 @@ function AddQueueModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
   const [destination, setDestination] = useState<(typeof PUBLISH_DESTINATIONS)[number]>('youtube')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [attachments, setAttachments] = useState<WorkspaceAttachment[]>([])
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -332,6 +335,13 @@ function AddQueueModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
           <div>
             <label className="field-label">Description</label>
             <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="field-textarea" />
+            <div className="mt-3">
+              <WorkspaceIntake
+                attachments={attachments}
+                onChange={setAttachments}
+                onInsertText={(text) => setDescription((current) => [current, text].filter(Boolean).join(current ? '\n' : ''))}
+              />
+            </div>
           </div>
           {error && <div className="rounded-lg border border-blood-700/60 bg-blood-900/30 px-4 py-3 text-sm text-blood-300">{error}</div>}
           <div className="flex justify-end gap-3">
