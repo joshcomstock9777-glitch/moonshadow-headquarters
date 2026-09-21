@@ -10,6 +10,8 @@ import {
   type AssetKind,
 } from '../../lib/hq'
 import { logActivity } from '../../lib/hq'
+import IntakeBar, { emptyIntakeSelection, type IntakeSelection } from './IntakeBar'
+import { persistIntakeAttachments } from '../../lib/intakeAttachments'
 
 export default function AssetLibrary() {
   const [assets, setAssets] = useState<Asset[]>([])
@@ -288,12 +290,43 @@ function AddAssetModal({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [intake, setIntake] = useState<IntakeSelection>(emptyIntakeSelection)
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (saving) return
     setSaving(true)
     setError('')
+
+    if (intake.files.length > 0) {
+      if (!form.project_id) {
+        setSaving(false)
+        setError('Choose a project so uploaded files stay attached to the right work.')
+        return
+      }
+      try {
+        const persisted = await persistIntakeAttachments({
+          files: intake.files,
+          projectId: form.project_id,
+          context: 'asset-library',
+        })
+        await logActivity(
+          form.project_id,
+          null,
+          'Creator',
+          `uploaded ${persisted.assets.length} asset${persisted.assets.length === 1 ? '' : 's'}`,
+          'create',
+        )
+        onAdded()
+        onClose()
+      } catch (uploadError) {
+        setError(uploadError instanceof Error ? uploadError.message : 'File upload failed.')
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
     const { error } = await supabase.from('assets').insert({
       name: form.name.trim(),
       kind: form.kind,
@@ -342,13 +375,27 @@ function AddAssetModal({
         </div>
         <form onSubmit={onSubmit} className="space-y-5">
           <div>
-            <label className="field-label">Name *</label>
+            <label className="field-label">Name {intake.files.length === 0 ? '*' : '(used for URL entries)'}</label>
             <input
-              required
+              required={intake.files.length === 0}
               value={form.name}
               onChange={field('name')}
               className="field-input"
               placeholder="e.g. Door shadow — key visual"
+            />
+          </div>
+          <div>
+            <label className="field-label">Upload from this device</label>
+            <IntakeBar
+              value={intake}
+              onChange={setIntake}
+              onAppendText={(text) => setForm((current) => ({
+                ...current,
+                prompt: current.prompt ? `${current.prompt}\n${text}` : text,
+              }))}
+              projectId={form.project_id || null}
+              disabled={saving}
+              allowExisting={false}
             />
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
