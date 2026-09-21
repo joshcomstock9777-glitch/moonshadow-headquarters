@@ -4,6 +4,8 @@ import type { RoundtableMessage, Project } from '../../lib/hqTypes'
 import { ROLES, ROLE_META, type Role, logActivity, timeAgo } from '../../lib/hq'
 import { navigate } from '../../lib/router'
 import { requestRoundtableReply } from '../../lib/pathRoundtable'
+import IntakeBar, { emptyIntakeSelection, type IntakeSelection } from './IntakeBar'
+import { persistIntakeAttachments } from '../../lib/intakeAttachments'
 
 const ADDRESS_TARGETS = ['everybody', ...ROLES] as const
 type AddressTarget = (typeof ADDRESS_TARGETS)[number]
@@ -37,6 +39,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
   const [addressTo, setAddressTo] = useState<AddressTarget>('everybody')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [intake, setIntake] = useState<IntakeSelection>(emptyIntakeSelection)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -75,15 +78,38 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
   async function send(e: React.FormEvent) {
     e.preventDefault()
     const creatorMessage = input.trim()
-    if (sending || !creatorMessage) return
+    const hasAttachments = intake.files.length > 0 || intake.existingAssets.length > 0
+    if (sending || (!creatorMessage && !hasAttachments)) return
+
+    if (hasAttachments && !selectedProject) {
+      setSendError('Choose a project before attaching files so Headquarters can preserve them in the right place.')
+      return
+    }
 
     setSending(true)
     setSendError(null)
 
+    let routedMessage = creatorMessage
+    if (hasAttachments && selectedProject) {
+      try {
+        const persisted = await persistIntakeAttachments({
+          files: intake.files,
+          existingAssets: intake.existingAssets,
+          projectId: selectedProject,
+          context: 'roundtable',
+        })
+        routedMessage = `${creatorMessage || 'Please review the attached project materials.'}${persisted.contextBlock}`
+      } catch (attachmentError) {
+        setSendError(attachmentError instanceof Error ? attachmentError.message : 'Attachment upload failed.')
+        setSending(false)
+        return
+      }
+    }
+
     const { error } = await supabase.from('roundtable_messages').insert({
       project_id: selectedProject,
       role: 'creator',
-      message: creatorMessage,
+      message: routedMessage,
       addressed_to: addressTo,
       kind: 'message',
     })
@@ -100,11 +126,12 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
         'Creator',
         `addressed ${addressTo} in Roundtable`,
         'info',
-        creatorMessage.slice(0, 80),
+        routedMessage.slice(0, 80),
       )
     }
 
     setInput('')
+    setIntake(emptyIntakeSelection())
     void load()
 
     const addressed = addressTo === 'everybody' ? ROLES : [addressTo as Role]
@@ -112,7 +139,7 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
 
     for (const role of addressed) {
       try {
-        const response = await requestRoundtableReply(role, creatorMessage)
+        const response = await requestRoundtableReply(role, routedMessage)
         const { data: inserted, error: insertError } = await supabase
           .from('roundtable_messages')
           .insert({
@@ -281,8 +308,21 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
                 placeholder="Speak to the room…"
                 rows={2}
               />
-              <button type="submit" disabled={sending || !input.trim()} className="btn-primary flex-none">Send</button>
+              <button
+                type="submit"
+                disabled={sending || (!input.trim() && intake.files.length === 0 && intake.existingAssets.length === 0)}
+                className="btn-primary flex-none"
+              >
+                Send
+              </button>
             </div>
+            <IntakeBar
+              value={intake}
+              onChange={setIntake}
+              onAppendText={(text) => setInput((current) => current ? `${current}\n${text}` : text)}
+              projectId={selectedProject}
+              disabled={sending}
+            />
           </form>
         </div>
       </div>
