@@ -10,6 +10,8 @@ import {
   logActivity,
 } from '../../lib/hq'
 import { navigate } from '../../lib/router'
+import IntakeBar, { emptyIntakeSelection, type IntakeSelection } from './IntakeBar'
+import { persistIntakeAttachments } from '../../lib/intakeAttachments'
 
 export default function ProjectsList() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -259,7 +261,37 @@ function JobPipeline({
   onUpdated: () => void
 }) {
   const [saving, setSaving] = useState(false)
-  const [field, setField] = useState<keyof Job>(null as any)
+  const [intake, setIntake] = useState<IntakeSelection>(emptyIntakeSelection)
+  const [intakeNote, setIntakeNote] = useState('')
+  const [intakeError, setIntakeError] = useState<string | null>(null)
+
+  async function preserveJobMaterials() {
+    if (intake.files.length === 0 && intake.existingAssets.length === 0) return
+    setSaving(true)
+    setIntakeError(null)
+    try {
+      const persisted = await persistIntakeAttachments({
+        files: intake.files,
+        existingAssets: intake.existingAssets,
+        projectId,
+        jobId: job.id,
+        context: 'job',
+      })
+      const nextBrief = [job.brief ?? '', intakeNote.trim(), persisted.contextBlock.trim()]
+        .filter(Boolean)
+        .join('\n\n')
+      const { error } = await supabase.from('jobs').update({ brief: nextBrief }).eq('id', job.id)
+      if (error) throw error
+      await logActivity(projectId, job.id, 'Creator', `attached ${persisted.assets.length + intake.existingAssets.length} project material(s)`, 'create')
+      setIntake(emptyIntakeSelection())
+      setIntakeNote('')
+      onUpdated()
+    } catch (error) {
+      setIntakeError(error instanceof Error ? error.message : 'Could not preserve the job materials.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function update(patch: Partial<Job>) {
     setSaving(true)
@@ -329,6 +361,34 @@ function JobPipeline({
           </button>
         </div>
       )}
+
+      <div className="rounded-xl border border-ink-800 bg-ink-950/30 p-4">
+        <label className="field-label">Add material to this job</label>
+        <textarea
+          value={intakeNote}
+          onChange={(event) => setIntakeNote(event.target.value)}
+          className="field-textarea !min-h-[70px]"
+          placeholder="Paste a note, prompt, transcript, or explanation."
+        />
+        <IntakeBar
+          value={intake}
+          onChange={setIntake}
+          onAppendText={(text) => setIntakeNote((current) => current ? `${current}\n${text}` : text)}
+          projectId={projectId}
+          disabled={saving}
+        />
+        {intakeError && <p className="mt-2 text-sm text-blood-300" role="alert">{intakeError}</p>}
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => void preserveJobMaterials()}
+            disabled={saving || (intake.files.length === 0 && intake.existingAssets.length === 0)}
+          >
+            {saving ? 'Preserving…' : 'Attach to Job'}
+          </button>
+        </div>
+      </div>
 
       {/* Pipeline visualization */}
       <div className="flex flex-wrap items-center gap-1.5">
