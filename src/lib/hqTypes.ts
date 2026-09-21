@@ -75,6 +75,7 @@ export interface RoundtableMessage {
   path_target: string | null
   path_evidence_verified: boolean
   path_evidence_verified_at: string | null
+  attachments: import('./workspaceAttachments').WorkspaceAttachment[]
   created_at: string
 }
 

@@ -10,6 +10,8 @@ import {
   type AssetKind,
 } from '../../lib/hq'
 import { logActivity } from '../../lib/hq'
+import WorkspaceIntake from '../shared/WorkspaceIntake'
+import type { WorkspaceAttachment } from '../../lib/workspaceAttachments'
 
 export default function AssetLibrary() {
   const [assets, setAssets] = useState<Asset[]>([])
@@ -20,6 +22,7 @@ export default function AssetLibrary() {
   const [filterKind, setFilterKind] = useState<'all' | AssetKind>('all')
   const [filterProject, setFilterProject] = useState<'all' | string>('all')
   const [showAdd, setShowAdd] = useState(false)
+  const [quickUploads, setQuickUploads] = useState<WorkspaceAttachment[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -102,6 +105,21 @@ export default function AssetLibrary() {
               {loading ? 'Refreshing…' : 'Retry evidence'}
             </button>
           </div>
+        </div>
+      )}
+
+      {!projectsError && (
+        <div className="card p-5">
+          <p className="field-label">Upload to the Asset Library</p>
+          <WorkspaceIntake
+            projectId={filterProject === 'all' ? null : filterProject}
+            attachments={quickUploads}
+            onChange={(next) => {
+              setQuickUploads(next)
+              void load()
+            }}
+            onInsertText={() => undefined}
+          />
         </div>
       )}
 

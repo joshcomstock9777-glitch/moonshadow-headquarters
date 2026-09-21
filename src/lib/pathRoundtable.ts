@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import type { WorkspaceAttachment } from './workspaceAttachments'
 
 export type RoundtableRole = 'herman' | 'allie' | 'challenger' | 'watcher'
 
@@ -12,12 +13,13 @@ type RoundtableRouteResult = {
 export async function requestRoundtableReply(
   role: RoundtableRole,
   creatorMessage: string,
+  attachments: WorkspaceAttachment[] = [],
 ): Promise<{ message: string; sessionId: string; correlationId: string }> {
   const message = creatorMessage.trim()
   if (!message) throw new Error('Roundtable message is required')
 
   const { data, error } = await supabase.functions.invoke<RoundtableRouteResult>('roundtable-path-route', {
-    body: { role, message },
+    body: { role, message, attachments },
   })
 
   if (error) throw error

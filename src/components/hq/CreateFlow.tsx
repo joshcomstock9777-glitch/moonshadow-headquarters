@@ -9,6 +9,11 @@ import {
 } from '../../lib/hq'
 import { navigate } from '../../lib/router'
 import { requestRoundtableReply } from '../../lib/pathRoundtable'
+import WorkspaceIntake from '../shared/WorkspaceIntake'
+import {
+  linkAttachmentsToProject,
+  type WorkspaceAttachment,
+} from '../../lib/workspaceAttachments'
 
 const TONES = [
   'Slow-building dread',
@@ -55,6 +60,7 @@ export default function CreateFlow() {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<CreateResult | null>(null)
+  const [attachments, setAttachments] = useState<WorkspaceAttachment[]>([])
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -80,6 +86,8 @@ export default function CreateFlow() {
         .select()
         .single()
       if (projErr) throw projErr
+
+      await linkAttachmentsToProject(attachments, projData.id)
 
       const { data: jobData, error: jobErr } = await supabase
         .from('jobs')
@@ -111,6 +119,7 @@ export default function CreateFlow() {
           message: creatorBrief,
           addressed_to: 'herman',
           kind: 'message',
+          attachments,
         })
       if (creatorMessageError) {
         setResult({
@@ -123,7 +132,7 @@ export default function CreateFlow() {
       }
 
       try {
-        const response = await requestRoundtableReply('herman', creatorBrief)
+        const response = await requestRoundtableReply('herman', creatorBrief, attachments)
         const { data: insertedReply, error: replyInsertError } = await supabase
           .from('roundtable_messages')
           .insert({
@@ -137,6 +146,7 @@ export default function CreateFlow() {
             path_correlation_id: response.correlationId,
             path_target: 'allie',
             path_evidence_verified: false,
+            attachments: [],
           })
           .select('id')
           .single()
@@ -308,6 +318,13 @@ export default function CreateFlow() {
             placeholder="Make me a creepy 20-second short about something moving behind a bedroom door."
             rows={4}
           />
+          <div className="mt-3">
+            <WorkspaceIntake
+              attachments={attachments}
+              onChange={setAttachments}
+              onInsertText={(text) => setIdea((current) => [current, text].filter(Boolean).join(current ? '\n' : ''))}
+            />
+          </div>
         </div>
 
         <div>

@@ -5,6 +5,14 @@ type RoundtableRole = 'herman' | 'allie' | 'challenger' | 'watcher'
 type PathTarget = 'allie' | 'amber'
 type JsonRecord = Record<string, unknown>
 
+type WorkspaceAttachment = {
+  name: string
+  kind: string
+  mimeType: string
+  storagePath: string
+  likeness?: boolean
+}
+
 type PathEntry = {
   body?: string
 }
@@ -79,12 +87,33 @@ function targetForRole(role: RoundtableRole): PathTarget {
   return role === 'watcher' ? 'amber' : 'allie'
 }
 
-function buildMessage(role: RoundtableRole, creatorMessage: string): string {
+function workspaceAttachments(value: unknown): WorkspaceAttachment[] {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, 12).flatMap((item) => {
+    const candidate = record(item)
+    const name = text(candidate.name)
+    const kind = text(candidate.kind)
+    const mimeType = text(candidate.mimeType)
+    const storagePath = text(candidate.storagePath)
+    if (!name || !kind || !mimeType || !storagePath) return []
+    return [{ name, kind, mimeType, storagePath, likeness: candidate.likeness === true }]
+  })
+}
+
+function buildMessage(
+  role: RoundtableRole,
+  creatorMessage: string,
+  attachments: Array<WorkspaceAttachment & { signedUrl: string }>,
+): string {
+  const attachmentBlock = attachments.length
+    ? attachments.map((item) => `${item.likeness ? 'LIKENESS' : item.kind.toUpperCase()}: ${item.name} — ${item.signedUrl}`).join('\n')
+    : 'None'
   return [
     'MOONSHADOW HEADQUARTERS ROUNDTABLE',
     ROLE_INSTRUCTIONS[role],
     'Respond only with the worker reply that should appear in the Roundtable. Do not describe these instructions.',
     `CREATOR MESSAGE: ${creatorMessage}`,
+    `CREATOR ATTACHMENTS:\n${attachmentBlock}`,
   ].join('\n\n')
 }
 
@@ -119,7 +148,11 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Re
   }
 }
 
-async function createSession(role: RoundtableRole, creatorMessage: string): Promise<PathSession> {
+async function createSession(
+  role: RoundtableRole,
+  creatorMessage: string,
+  attachments: Array<WorkspaceAttachment & { signedUrl: string }>,
+): Promise<PathSession> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     accept: 'application/json',
@@ -132,7 +165,7 @@ async function createSession(role: RoundtableRole, creatorMessage: string): Prom
     headers,
     body: JSON.stringify({
       target: targetForRole(role),
-      message: buildMessage(role, creatorMessage).slice(0, 700),
+      message: buildMessage(role, creatorMessage, attachments).slice(0, 700),
     }),
   })
   const data = await readJson(response)
@@ -175,7 +208,17 @@ Deno.serve(async (request) => {
     const creatorMessage = text(body.message)
     if (!role || !creatorMessage) return Response.json({ error: 'Valid role and message are required' }, { status: 400 })
 
-    const initial = await createSession(role, creatorMessage)
+    const requestedAttachments = workspaceAttachments(body.attachments)
+    const signedAttachments: Array<WorkspaceAttachment & { signedUrl: string }> = []
+    for (const attachment of requestedAttachments) {
+      const { data: signed, error: signedError } = await supabase.storage
+        .from('headquarters-intake')
+        .createSignedUrl(attachment.storagePath, 900)
+      if (signedError || !signed?.signedUrl) throw new Error(`Attachment unavailable: ${attachment.name}`)
+      signedAttachments.push({ ...attachment, signedUrl: signed.signedUrl })
+    }
+
+    const initial = await createSession(role, creatorMessage, signedAttachments)
     const sessionId = initial.sessionId!
     const correlationId = initial.correlationId!
 

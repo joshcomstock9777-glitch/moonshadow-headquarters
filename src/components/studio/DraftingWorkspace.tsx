@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import type { Draft, Gig } from '../../lib/types'
+import WorkspaceIntake from '../shared/WorkspaceIntake'
+import type { WorkspaceAttachment } from '../../lib/workspaceAttachments'
 import {
   GENRES,
   GENRE_LABELS,
@@ -27,6 +29,7 @@ export default function DraftingWorkspace() {
   const [saving, setSaving] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [filterStatus, setFilterStatus] = useState<'all' | DraftStatus>('all')
+  const [attachments, setAttachments] = useState<WorkspaceAttachment[]>([])
 
   useEffect(() => {
     void load()
@@ -86,6 +89,7 @@ export default function DraftingWorkspace() {
       return
     }
     setForm(emptyForm)
+    setAttachments([])
     setDrafts((ds) => [data, ...ds])
     setActiveId(data.id)
   }
@@ -192,6 +196,13 @@ export default function DraftingWorkspace() {
             className="field-textarea"
             placeholder="What the client wants — tone, length, must-haves, avoid-list."
           />
+          <div className="mt-3">
+            <WorkspaceIntake
+              attachments={attachments}
+              onChange={setAttachments}
+              onInsertText={(text) => setForm((current) => ({ ...current, brief: [current.brief, text].filter(Boolean).join(current.brief ? '\n' : '') }))}
+            />
+          </div>
         </div>
         {error && (
           <div className="rounded-lg border border-blood-700/60 bg-blood-900/30 px-4 py-3 text-sm text-blood-300">
@@ -390,6 +401,7 @@ function EditorBlock({
 }) {
   const [local, setLocal] = useState(value)
   const [dirty, setDirty] = useState(false)
+  const [attachments, setAttachments] = useState<WorkspaceAttachment[]>([])
 
   useEffect(() => {
     setLocal(value)
@@ -419,6 +431,17 @@ function EditorBlock({
         rows={rows}
         className="field-textarea !min-h-0 font-body text-base leading-relaxed"
       />
+      <div className="mt-2">
+        <WorkspaceIntake
+          attachments={attachments}
+          onChange={setAttachments}
+          onInsertText={(text) => {
+            setLocal((current) => [current, text].filter(Boolean).join(current ? '\n' : ''))
+            setDirty(true)
+          }}
+          compact
+        />
+      </div>
       {footer && <div className="mt-1.5 text-right">{footer}</div>}
     </div>
   )
