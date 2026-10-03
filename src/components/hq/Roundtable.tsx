@@ -38,301 +38,258 @@ export default function Roundtable({ projectId }: { projectId?: string }) {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const followLatest = useRef(true)
+  const loadRequest = useRef(0)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (showLoading = false) => {
+    const request = ++loadRequest.current
+    if (showLoading) setLoading(true)
     setLoadError(null)
     let query = supabase
       .from('roundtable_messages')
       .select('*')
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(100)
-    if (selectedProject) query = query.eq('project_id', selectedProject)
+    query = selectedProject ? query.eq('project_id', selectedProject) : query.is('project_id', null)
 
     const [msgs, ps] = await Promise.all([
       query,
       supabase.from('projects').select('*').order('updated_at', { ascending: false }).limit(20),
     ])
 
+    if (request !== loadRequest.current) return
     const failures: string[] = []
     if (msgs.error) failures.push(`messages: ${msgs.error.message}`)
     if (ps.error) failures.push(`projects: ${ps.error.message}`)
 
-    if (!msgs.error) setMessages(msgs.data ?? [])
+    if (!msgs.error) setMessages((msgs.data ?? []).reverse())
     if (!ps.error) setProjects(ps.data ?? [])
     if (failures.length) setLoadError(failures.join(' · '))
     setLoading(false)
   }, [selectedProject])
 
+  useEffect(() => setSelectedProject(projectId ?? null), [projectId])
+
   useEffect(() => {
-    void load()
+    setSendError(null)
+    followLatest.current = true
+    setMessages([])
+    void load(true)
+    const timer = window.setInterval(() => void load(), 5000)
+    return () => {
+      window.clearInterval(timer)
+      loadRequest.current += 1
+    }
   }, [load])
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (scrollRef.current && followLatest.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [messages])
 
-  async function send(e: React.FormEvent) {
+  async function send(e: { preventDefault(): void }, messageOverride?: string) {
     e.preventDefault()
-    const creatorMessage = input.trim()
+    const creatorMessage = (messageOverride ?? input).trim()
     if (sending || !creatorMessage) return
 
-    setSending(true)
     setSendError(null)
-
-    const { error } = await supabase.from('roundtable_messages').insert({
-      project_id: selectedProject,
-      role: 'creator',
-      message: creatorMessage,
-      addressed_to: addressTo,
-      kind: 'message',
-    })
-    if (error) {
-      setSendError(error.message)
-      setSending(false)
+    if (new TextEncoder().encode(creatorMessage).length > 6000) {
+      setSendError('Message is too long. Split it into shorter messages.')
       return
     }
+    setSending(true)
 
-    if (selectedProject) {
-      await logActivity(
-        selectedProject,
-        null,
-        'Creator',
-        `addressed ${addressTo} in Roundtable`,
-        'info',
-        creatorMessage.slice(0, 80),
-      )
-    }
+    try {
+      const { data: creatorRow, error } = await supabase.from('roundtable_messages').insert({
+        project_id: selectedProject,
+        role: 'creator',
+        message: creatorMessage,
+        addressed_to: addressTo,
+        kind: 'message',
+      }).select('id').single()
+      if (error) throw error
+      if (!creatorRow) throw new Error('Your message could not be saved')
 
-    setInput('')
-    void load()
+      if (selectedProject) {
+        await logActivity(
+          selectedProject,
+          null,
+          'Creator',
+          `addressed ${addressTo} in Roundtable`,
+          'info',
+          creatorMessage.slice(0, 80),
+        )
+      }
 
-    const addressed = addressTo === 'everybody' ? ROLES : [addressTo as Role]
-    const failures: string[] = []
+      if (!messageOverride) setInput((current) => current.trim() === creatorMessage ? '' : current)
+      followLatest.current = true
+      void load()
 
-    for (const role of addressed) {
-      try {
-        const response = await requestRoundtableReply(role, creatorMessage)
-        const { data: inserted, error: insertError } = await supabase
-          .from('roundtable_messages')
-          .insert({
-            project_id: selectedProject,
-            role,
-            message: response.message,
-            addressed_to: 'creator',
-            kind: 'message',
-            proposed_action: null,
-            path_session_id: response.sessionId,
-            path_correlation_id: response.correlationId,
-            path_target: pathTargetForRole(role),
-            path_evidence_verified: false,
-          })
-          .select('id')
-          .single()
-        if (insertError) throw insertError
+      const addressed = addressTo === 'everybody' ? ROLES : [addressTo as Role]
+      const failures: string[] = []
 
-        let evidenceVerified = false
+      for (const role of addressed) {
         try {
+        const response = await requestRoundtableReply(role, creatorMessage, { creatorMessageId: creatorRow.id })
+          const { data: inserted, error: insertError } = await supabase
+            .from('roundtable_messages')
+            .insert({
+              project_id: selectedProject,
+              role,
+              message: response.message,
+              addressed_to: 'creator',
+              kind: 'message',
+              proposed_action: null,
+              path_session_id: response.sessionId,
+              path_correlation_id: response.correlationId,
+              path_target: pathTargetForRole(role),
+              path_evidence_verified: false,
+            })
+            .select('id')
+            .single()
+          if (insertError) throw insertError
+
+          let evidenceVerified = false
+          try {
           await verifyRecordedPathEvidence(inserted.id)
-          evidenceVerified = true
-        } catch (verificationError) {
-          const verificationMessage = verificationError instanceof Error ? verificationError.message : 'verification failed'
-          failures.push(
-            `${ROLE_META[role].name}: reply recorded, verification pending (${verificationMessage})`,
-          )
-          if (selectedProject) {
+            evidenceVerified = true
+          } catch (verificationError) {
+            const verificationMessage = verificationError instanceof Error ? verificationError.message : 'verification failed'
+            failures.push(
+              `${ROLE_META[role].name}: reply recorded, verification pending (${verificationMessage})`,
+            )
+            if (selectedProject) {
+              await logActivity(
+                selectedProject,
+                null,
+                ROLE_META[role].name,
+                'Roundtable Path evidence verification failed',
+                'warning',
+                `Session ${response.sessionId.slice(0, 12)}… · ${verificationMessage.slice(0, 120)}`,
+              )
+            }
+          }
+
+          if (selectedProject && evidenceVerified) {
             await logActivity(
               selectedProject,
               null,
               ROLE_META[role].name,
-              'Roundtable Path evidence verification failed',
-              'warning',
-              `Session ${response.sessionId.slice(0, 12)}… · ${verificationMessage.slice(0, 120)}`,
+              'responded through verified Moonshadow Path evidence',
+              'success',
+              `Path session ${response.sessionId.slice(0, 12)}… · correlation ${response.correlationId.slice(0, 12)}…`,
             )
           }
+          void load()
+        } catch (err) {
+          failures.push(`${ROLE_META[role].name}: ${err instanceof Error ? err.message : 'Path request failed'}`)
         }
-
-        if (selectedProject && evidenceVerified) {
-          await logActivity(
-            selectedProject,
-            null,
-            ROLE_META[role].name,
-            'responded through verified Moonshadow Path evidence',
-            'success',
-            `Path session ${response.sessionId.slice(0, 12)}… · correlation ${response.correlationId.slice(0, 12)}…`,
-          )
-        }
-        void load()
-      } catch (err) {
-        failures.push(`${ROLE_META[role].name}: ${err instanceof Error ? err.message : 'Path request failed'}`)
       }
-    }
 
-    if (failures.length) setSendError(failures.join(' · '))
-    setSending(false)
-    void load()
+      if (failures.length) setSendError(failures.join(' · '))
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'Could not send the message')
+    } finally {
+      setSending(false)
+      void load()
+    }
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="section-eyebrow"><span className="h-px w-8 bg-blood-700" /> Roundtable</p>
-          <h1 className="section-title">The room where the work <span className="italic text-blood-500">gets shaped.</span></h1>
-        </div>
-        <div className="flex items-center gap-3">
+    <section className="flex h-full min-h-0 flex-col" aria-label="Roundtable conversation">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 pb-2">
+        <h1 className="text-lg font-semibold">Roundtable</h1>
+        <div className="flex items-center gap-2">
           <select
+            aria-label="Conversation room"
             value={selectedProject ?? ''}
             onChange={(e) => {
               setSelectedProject(e.target.value || null)
-              if (e.target.value) navigate({ name: 'hq-roundtable', projectId: e.target.value })
+              navigate({ name: 'hq-roundtable', projectId: e.target.value || undefined })
             }}
-            className="field-select !w-auto !py-2 !text-xs"
-            disabled={!!loadError && projects.length === 0}
+            className="field-select !w-auto max-w-[55vw] !py-2 !text-sm"
+            disabled={sending || (!!loadError && projects.length === 0)}
           >
-            <option value="">All projects</option>
+            <option value="">General room</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
           </select>
+          <button type="button" onClick={() => void load()} className="btn-secondary !px-3 !py-2">Refresh</button>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {ROLES.map((role) => {
-          const meta = ROLE_META[role]
-          return (
-            <div key={role} className="rounded-xl border border-ink-800 bg-ink-900/30 p-4">
-              <div className="flex items-center gap-2">
-                <span className="font-display text-2xl text-blood-500">{meta.glyph}</span>
-                <div>
-                  <p className="text-sm font-semibold text-ink-100">{meta.name}</p>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-500">{meta.title}</p>
-                </div>
-              </div>
-            </div>
-          )
-        })}
+      {loadError && <p role="alert" className="shrink-0 pb-2 text-sm text-blood-300">Could not refresh the room: {loadError}</p>}
+
+      <div
+        ref={scrollRef}
+        role="log"
+        aria-label="Shared comments"
+        aria-live="polite"
+        onScroll={() => {
+          const element = scrollRef.current
+          if (element) followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
+        }}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 sm:px-4"
+      >
+        {loading && messages.length === 0 ? <p className="py-4 text-ink-400">Loading…</p>
+          : loadError && messages.length === 0 ? <p className="py-4 text-blood-300">The conversation could not be loaded. Try Refresh.</p>
+          : messages.length === 0 ? <p className="py-4 text-ink-300">Say something to start the conversation.</p>
+          : messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)}
+        {sending && <p role="status" className="py-3 text-sm text-ink-400">Waiting for replies…</p>}
+        {sendError && <p role="alert" className="py-3 text-sm text-blood-300">{sendError}</p>}
       </div>
 
-      {loadError && (
-        <div className="rounded-xl border border-blood-700/50 bg-blood-900/10 px-4 py-3 text-sm text-blood-300">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span>Roundtable live evidence unavailable: {loadError}</span>
-            <button type="button" onClick={() => void load()} className="btn-secondary !px-3 !py-1.5 !text-[10px]">Retry evidence</button>
-          </div>
+      <form onSubmit={send} className="shrink-0 border-t border-ink-800 pt-2 pb-[env(safe-area-inset-bottom)]">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <label className="flex items-center gap-2 text-sm text-ink-300">
+            Send to
+            <select value={addressTo} onChange={(e) => setAddressTo(e.target.value as AddressTarget)} disabled={sending} className="field-select !w-auto !py-1.5 !text-sm">
+              {ADDRESS_TARGETS.map((t) => <option key={t} value={t}>{t === 'everybody' ? 'Everybody' : ROLE_META[t as Role]?.name ?? t}</option>)}
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={sending || !messages.some((msg) => msg.role !== 'creator')}
+            onClick={(e) => void send(e, 'Read the latest replies in this room. Respond to the other speakers: say what you agree with, what you would change, and help us move the creative idea forward.')}
+            className="btn-secondary !px-3 !py-2 disabled:opacity-40"
+          >Discuss replies</button>
         </div>
-      )}
-
-      <div className="card flex h-[55vh] flex-col overflow-hidden">
-        <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-6">
-          {loading ? (
-            <p className="text-ink-400">Loading…</p>
-          ) : loadError && messages.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <p className="text-blood-300">Roundtable messages could not be verified from Supabase.</p>
-              <p className="mt-2 text-sm text-ink-500">No empty-room status is being inferred while live evidence is unavailable.</p>
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <p className="text-ink-300">The Roundtable is quiet. Say something to get it started.</p>
-              <p className="mt-2 text-sm text-ink-500">Address everybody, or pick a specialist.</p>
-            </div>
-          ) : (
-            messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)
-          )}
-          {sending && (
-            <div className="flex items-center gap-2 text-ink-500">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-blood-500" />
-              <span className="font-mono text-[10px] uppercase tracking-[0.2em]">Path is routing the room…</span>
-            </div>
-          )}
-          {sendError && (
-            <div className="rounded-lg border border-blood-700/50 bg-blood-900/10 px-4 py-3 text-sm text-blood-300">
-              Roundtable connection error: {sendError}
-            </div>
-          )}
+        <div className="flex items-end gap-2">
+          <textarea
+            aria-label="Message to the room"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                void send(e)
+              }
+            }}
+            className="field-textarea !min-h-[60px] min-w-0 flex-1 resize-none !text-base"
+            placeholder="Talk to the room…"
+            rows={2}
+          />
+          <button type="submit" disabled={sending || !input.trim()} className="btn-primary !px-4 disabled:opacity-40">Send</button>
         </div>
-
-        <div className="border-t border-ink-800 p-4">
-          <form onSubmit={send} className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-500">Address:</span>
-              {ADDRESS_TARGETS.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setAddressTo(t)}
-                  className={`rounded-full px-3 py-1 font-mono text-[10px] uppercase tracking-[0.15em] transition-all ${addressTo === t ? 'bg-blood-700/20 text-blood-300' : 'text-ink-400 hover:text-ink-200'}`}
-                >
-                  {t === 'everybody' ? 'Everybody' : ROLE_META[t as Role]?.name ?? t}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-end gap-3">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void send(e as any)
-                  }
-                }}
-                className="field-textarea !min-h-[60px] flex-1 resize-none"
-                placeholder="Speak to the room…"
-                rows={2}
-              />
-              <button type="submit" disabled={sending || !input.trim()} className="btn-primary flex-none">Send</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
+      </form>
+    </section>
   )
 }
 
 function MessageBubble({ msg }: { msg: RoundtableMessage }) {
-  const isCreator = msg.role === 'creator'
-  const roleMeta = ROLE_META[msg.role as Role]
-  const name = isCreator ? 'You' : roleMeta?.name ?? msg.role
-
-  const roleColor =
-    msg.role === 'herman'
-      ? 'text-toxic-300'
-      : msg.role === 'allie'
-        ? 'text-amber-300'
-        : msg.role === 'challenger'
-          ? 'text-blood-300'
-          : msg.role === 'watcher'
-            ? 'text-ink-300'
-            : 'text-blood-400'
-
+  const name = msg.role === 'creator' ? 'You' : ROLE_META[msg.role as Role]?.name ?? msg.role
   return (
-    <div className={`flex ${isCreator ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[80%] ${isCreator ? 'items-end' : 'items-start'}`}>
-        <div className="mb-1 flex items-center gap-2">
-          <span className={`font-mono text-[10px] uppercase tracking-[0.2em] ${roleColor}`}>{name}</span>
-          {msg.addressed_to && msg.addressed_to !== 'creator' && (
-            <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-600">
-              → {msg.addressed_to === 'everybody' ? 'all' : ROLE_META[msg.addressed_to as Role]?.name ?? msg.addressed_to}
-            </span>
-          )}
-          <span className="font-mono text-[9px] text-ink-600">{timeAgo(msg.created_at)}</span>
-        </div>
-        <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${isCreator ? 'rounded-tr-sm border border-blood-700/40 bg-blood-700/10 text-ink-100' : msg.kind === 'proposal' ? 'rounded-tl-sm border border-amber-700/40 bg-amber-700/5 text-ink-100' : 'rounded-tl-sm border border-ink-700 bg-ink-900/40 text-ink-200'}`}>
-          {msg.message}
-          {msg.path_session_id && msg.path_correlation_id && (
-            <div className={`mt-3 border-t border-ink-800 pt-2 font-mono text-[9px] uppercase tracking-[0.15em] ${msg.path_evidence_verified ? 'text-toxic-300' : 'text-amber-300'}`}>
-              {msg.path_evidence_verified ? 'Verified Path evidence' : 'Path response recorded · backend verification pending'} · target {msg.path_target ?? 'unknown'} · session {msg.path_session_id.slice(0, 12)}… · correlation {msg.path_correlation_id.slice(0, 12)}…
-            </div>
-          )}
-          {msg.kind === 'proposal' && msg.proposed_action && (
-            <div className="mt-3 rounded-lg border border-amber-700/40 bg-amber-700/10 px-3 py-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-amber-300">Proposed action</p>
-              <p className="mt-1 text-sm text-ink-200">{msg.proposed_action}</p>
-            </div>
-          )}
-        </div>
+    <article className="min-w-0 border-b border-ink-800 py-4">
+      <div className="mb-1 flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-semibold text-ink-200">{name}</span>
+        <span className="text-xs text-ink-500">{timeAgo(msg.created_at)}</span>
       </div>
-    </div>
+      <p className="whitespace-pre-wrap break-words text-base leading-relaxed text-ink-100 [overflow-wrap:anywhere]">{msg.message}</p>
+      {msg.path_session_id && msg.path_correlation_id && (
+        <details className="mt-2 text-xs text-ink-400">
+          <summary>{msg.path_evidence_verified ? 'Verified reply' : 'Reply recorded · verification pending'}</summary>
+          <p className="mt-1 break-words">Target: {msg.path_target ?? 'unknown'} · Session: {msg.path_session_id} · Correlation: {msg.path_correlation_id}</p>
+        </details>
+      )}
+      {msg.kind === 'proposal' && msg.proposed_action && <p className="mt-2 whitespace-pre-wrap break-words text-base text-amber-300">Proposed action: {msg.proposed_action}</p>}
+    </article>
   )
 }
