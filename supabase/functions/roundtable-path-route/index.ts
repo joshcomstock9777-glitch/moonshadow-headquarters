@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { buildConversationMessage, type ConversationMessage } from './conversation.ts'
 
 type HqRole = 'owner' | 'operator'
 type RoundtableRole = 'herman' | 'allie' | 'challenger' | 'watcher'
@@ -21,6 +22,15 @@ const DEFAULT_PATH_BASE_URL = 'https://moonshadow-path-proof.vercel.app'
 const POLL_INTERVAL_MS = 1800
 const TIMEOUT_MS = 100000
 const REQUEST_TIMEOUT_MS = 15000
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+function json(data: unknown, init: ResponseInit = {}): Response {
+  return Response.json(data, { ...init, headers: { ...CORS_HEADERS, ...init.headers } })
+}
 
 const ROLE_INSTRUCTIONS: Record<RoundtableRole, string> = {
   herman:
@@ -79,15 +89,6 @@ function targetForRole(role: RoundtableRole): PathTarget {
   return role === 'watcher' ? 'amber' : 'allie'
 }
 
-function buildMessage(role: RoundtableRole, creatorMessage: string): string {
-  return [
-    'MOONSHADOW HEADQUARTERS ROUNDTABLE',
-    ROLE_INSTRUCTIONS[role],
-    'Respond only with the worker reply that should appear in the Roundtable. Do not describe these instructions.',
-    `CREATOR MESSAGE: ${creatorMessage}`,
-  ].join('\n\n')
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -119,7 +120,7 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Re
   }
 }
 
-async function createSession(role: RoundtableRole, creatorMessage: string): Promise<PathSession> {
+async function createSession(role: RoundtableRole, creatorMessage: string, history: ConversationMessage[]): Promise<PathSession> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     accept: 'application/json',
@@ -132,7 +133,7 @@ async function createSession(role: RoundtableRole, creatorMessage: string): Prom
     headers,
     body: JSON.stringify({
       target: targetForRole(role),
-      message: buildMessage(role, creatorMessage).slice(0, 700),
+      message: buildConversationMessage(ROLE_INSTRUCTIONS[role], creatorMessage, history),
     }),
   })
   const data = await readJson(response)
@@ -153,11 +154,12 @@ async function fetchSession(sessionId: string): Promise<PathSession> {
 }
 
 Deno.serve(async (request) => {
-  if (request.method !== 'POST') return Response.json({ error: 'Method not allowed' }, { status: 405 })
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS })
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, { status: 405 })
 
   try {
     const token = bearerToken(request)
-    if (!token) return Response.json({ error: 'Authentication required' }, { status: 401 })
+    if (!token) return json({ error: 'Authentication required' }, { status: 401 })
 
     const supabase = createClient(requiredEnv('SUPABASE_URL'), requiredEnv('SUPABASE_SERVICE_ROLE_KEY'), {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -165,17 +167,48 @@ Deno.serve(async (request) => {
 
     const { data: callerData, error: callerError } = await supabase.auth.getUser(token)
     const caller = callerData.user
-    if (callerError || !caller) return Response.json({ error: 'Invalid or expired Headquarters session' }, { status: 401 })
+    if (callerError || !caller) return json({ error: 'Invalid or expired Headquarters session' }, { status: 401 })
     if (!hqRole(caller.app_metadata?.hq_role)) {
-      return Response.json({ error: 'Headquarters owner/operator role required' }, { status: 403 })
+      return json({ error: 'Headquarters owner/operator role required' }, { status: 403 })
     }
 
     const body = record(await request.json())
     const role = roundtableRole(body.role)
     const creatorMessage = text(body.message)
-    if (!role || !creatorMessage) return Response.json({ error: 'Valid role and message are required' }, { status: 400 })
+    if (!role || !creatorMessage) return json({ error: 'Valid role and message are required' }, { status: 400 })
+    if (new TextEncoder().encode(creatorMessage).length > 6000) {
+      return json({ error: 'Message is too long. Split it into shorter messages.' }, { status: 400 })
+    }
 
-    const initial = await createSession(role, creatorMessage)
+    let history: ConversationMessage[] = []
+    const creatorMessageId = text(body.creatorMessageId)
+    if (creatorMessageId) {
+      // Reuse the caller's identity for reads, so RLS also governs context.
+      const roomClient = createClient(requiredEnv('SUPABASE_URL'), requiredEnv('SUPABASE_ANON_KEY'), {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+      const { data: anchor, error: anchorError } = await roomClient
+        .from('roundtable_messages')
+        .select('id, project_id, role, message')
+        .eq('id', creatorMessageId)
+        .single()
+      if (anchorError || !anchor || anchor.role !== 'creator' || anchor.message.trim() !== creatorMessage) {
+        return json({ error: 'The saved creator message could not be read or did not match.' }, { status: 400 })
+      }
+      let query = roomClient.from('roundtable_messages')
+        .select('role, message, path_evidence_verified')
+        .neq('id', creatorMessageId)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(12)
+      query = anchor.project_id ? query.eq('project_id', anchor.project_id) : query.is('project_id', null)
+      const { data: rows, error: historyError } = await query
+      if (historyError) throw new Error('Shared conversation could not be read')
+      history = (rows ?? []).reverse()
+    }
+
+    const initial = await createSession(role, creatorMessage, history)
     const sessionId = initial.sessionId!
     const correlationId = initial.correlationId!
 
@@ -183,7 +216,7 @@ Deno.serve(async (request) => {
     if (initial.status === 'final') {
       const message = extractWorkerReply(initial.transcript)
       if (!message) throw new Error('Path completed without a worker reply')
-      return Response.json({ message, sessionId, correlationId })
+      return json({ message, sessionId, correlationId })
     }
 
     const startedAt = Date.now()
@@ -197,14 +230,14 @@ Deno.serve(async (request) => {
       if (current.status === 'final') {
         const message = extractWorkerReply(current.transcript)
         if (!message) throw new Error('Path completed without a worker reply')
-        return Response.json({ message, sessionId, correlationId })
+        return json({ message, sessionId, correlationId })
       }
     }
 
-    return Response.json({ error: 'Path Roundtable request timed out' }, { status: 504 })
+    return json({ error: 'Path Roundtable request timed out' }, { status: 504 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Roundtable routing failed'
     console.error('Roundtable routing failed:', message)
-    return Response.json({ error: 'Roundtable Path routing unavailable' }, { status: 503 })
+    return json({ error: 'Roundtable Path routing unavailable' }, { status: 503 })
   }
 })

@@ -61,11 +61,12 @@ export default function HqShell({
   }
 
   const activeName = route.name
+  const isRoundtable = activeName === 'hq-roundtable'
   const verifiedApprovals = evidenceState === 'verified' ? approvals : null
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-ink-800/80 bg-ink-950/90 backdrop-blur-md">
+    <div className={isRoundtable ? 'flex h-dvh min-h-0 flex-col overflow-hidden' : 'min-h-screen'}>
+      <header className="sticky top-0 z-40 shrink-0 border-b border-ink-800/80 bg-ink-950/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full max-w-[1400px] items-center justify-between px-6">
           <a
             href="#/hq/command"
@@ -116,11 +117,11 @@ export default function HqShell({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1400px] px-6 py-8">
+      <main className={isRoundtable ? 'mx-auto min-h-0 w-full max-w-[1400px] flex-1 px-2 py-2 sm:px-6' : 'mx-auto w-full max-w-[1400px] px-6 py-8'}>
         {children}
       </main>
 
-      <footer className="border-t border-ink-800/60 px-6 py-6">
+      {!isRoundtable && <footer className="border-t border-ink-800/60 px-6 py-6">
         <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between gap-4">
           <div className="min-w-0">
             {evidenceState === 'verified' ? (
@@ -156,7 +157,7 @@ export default function HqShell({
             Command Center
           </button>
         </div>
-      </footer>
+      </footer>}
     </div>
   )
 }
