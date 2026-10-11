@@ -26,6 +26,11 @@ import { useRoute, navigate } from './lib/router'
 export default function App() {
   const route = useRoute()
 
+  // Roundtable owns the viewport so the conversation is never a dashboard panel.
+  if (route.name === 'hq-roundtable') {
+    return <AuthGate><Roundtable projectId={route.projectId} /></AuthGate>
+  }
+
   // Headquarters routes
   if (route.name.startsWith('hq')) {
     return (
@@ -42,8 +47,6 @@ export default function App() {
               <ProjectsList />
             ) : route.name === 'hq-project' ? (
               <ProjectDetail id={route.id} />
-            ) : route.name === 'hq-roundtable' ? (
-              <Roundtable projectId={route.projectId} />
             ) : route.name === 'hq-assets' ? (
               <AssetLibrary />
             ) : route.name === 'hq-factory' ? (
