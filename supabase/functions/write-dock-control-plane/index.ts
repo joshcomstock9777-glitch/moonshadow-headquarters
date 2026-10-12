@@ -28,13 +28,6 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function uuidOrNull(value: unknown): string | null {
-  const candidate = text(value)
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate)
-    ? candidate
-    : null
-}
-
 Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return Response.json({ error: 'Method not allowed' }, { status: 405 })
@@ -67,19 +60,20 @@ Deno.serve(async (request) => {
     const toActor = text(body.toActor)
     const note = text(body.note) || null
     const payload = record(body.payload)
-    const machineId = body.machineId == null ? null : uuidOrNull(body.machineId)
+    const machineId = body.machineId == null ? null : text(body.machineId)
 
     if (!jobType || !fromActor || !toActor) {
       return Response.json({ error: 'jobType, fromActor, and toActor are required' }, { status: 400 })
     }
     if (body.machineId != null && !machineId) {
-      return Response.json({ error: 'machineId must be a valid UUID' }, { status: 400 })
+      return Response.json({ error: 'machineId must be a valid Dock machine slug' }, { status: 400 })
     }
 
+    let legacyMachineId: string | null = null
     if (machineId) {
       const { data: machine, error: machineError } = await supabase
-        .from('machines')
-        .select('id,status')
+        .from('dock_machines')
+        .select('id,connection_status')
         .eq('id', machineId)
         .maybeSingle()
 
@@ -88,15 +82,27 @@ Deno.serve(async (request) => {
         return Response.json({ error: 'Live Dock registry unavailable' }, { status: 503 })
       }
       if (!machine) return Response.json({ error: 'Destination machine is not registered' }, { status: 409 })
-      if (machine.status !== 'online') {
-        return Response.json({ error: 'Destination machine is not online' }, { status: 409 })
+      if (machine.connection_status !== 'connected') {
+        return Response.json({ error: 'Destination machine is not connected' }, { status: 409 })
       }
+
+      const { data: legacyMachine, error: legacyMachineError } = await supabase
+        .from('machines')
+        .select('id')
+        .eq('dock_machine_id', machineId)
+        .maybeSingle()
+      if (legacyMachineError) {
+        console.error('Dock compatibility lookup failed:', legacyMachineError.message)
+        return Response.json({ error: 'Live Dock registry unavailable' }, { status: 503 })
+      }
+      legacyMachineId = typeof legacyMachine?.id === 'string' ? legacyMachine.id : null
     }
 
     const { data: job, error: jobError } = await supabase
       .from('dispatch_jobs')
       .insert({
-        machine_id: machineId,
+        machine_id: legacyMachineId,
+        dock_machine_id: machineId,
         job_type: jobType,
         status: 'queued',
         payload,
@@ -135,7 +141,8 @@ Deno.serve(async (request) => {
         handoff_id: handoff.id,
         from_actor: fromActor,
         to_actor: toActor,
-        machine_id: machineId,
+        machine_id: legacyMachineId,
+        dock_machine_id: machineId,
       },
     })
 
