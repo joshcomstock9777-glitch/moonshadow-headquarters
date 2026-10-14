@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import type { Job, Project } from '../../lib/hqTypes'
 import { STAGE_LABELS, stageColor, timeAgo } from '../../lib/hq'
 import { navigate } from '../../lib/router'
+import IdeaBox from './IdeaBox'
 
 const DEFAULT_LANES = ['Short Film', 'Story', 'Channel Piece', 'Social Clip']
 
@@ -97,6 +98,8 @@ export default function ContentFactory() {
           </button>
         </div>
       </div>
+
+      <IdeaBox onCreated={() => void load()} />
 
       {laneError && (
         <div className="rounded-lg border border-blood-700/50 bg-blood-700/10 p-4 text-sm text-blood-300">

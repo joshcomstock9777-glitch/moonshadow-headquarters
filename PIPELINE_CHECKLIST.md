@@ -18,7 +18,7 @@ Check items off as they are done. `[x]` = done in code. Items marked **YOU** nee
 - [x] `supabase/functions/generate-script` edge function (saves a `clip` project with the plan in `notes`)
 - [ ] **YOU** Create an OpenAI API key; set it as a secret: `OPENAI_API_KEY` (Supabase → Edge Functions → Secrets)
 - [ ] **YOU** Deploy: `supabase functions deploy generate-script`
-- [ ] "Paste an idea" box in the HQ UI that calls the function
+- [x] "Idea Box" in Content Factory (`src/components/hq/IdeaBox.tsx`) calls the function
 
 ## C. Video rendering
 - [ ] Choose renderer (hosted video API, or ffmpeg/Remotion on a hosted worker; Chromebook can't render locally)
