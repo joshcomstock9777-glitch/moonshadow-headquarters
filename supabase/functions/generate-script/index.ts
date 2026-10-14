@@ -38,7 +38,7 @@ Deno.serve(async (request) => {
 
     const llm = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `******'OPENAI_API_KEY')}` },
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + requiredEnv('OPENAI_API_KEY') },
       body: JSON.stringify({
         model: Deno.env.get('OPENAI_MODEL')?.trim() || 'gpt-4o-mini',
         response_format: { type: 'json_object' },
